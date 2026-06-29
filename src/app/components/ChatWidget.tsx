@@ -3,11 +3,12 @@
 import { useState } from 'react';
 import { useChat } from 'ai/react';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, isFirebaseConfigured } from '@/lib/firebase';
 
 const ChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
     api: '/api/chat',
   });
@@ -17,7 +18,13 @@ const ChatWidget = () => {
       return;
     }
 
+    if (!isFirebaseConfigured || !db) {
+      setSaveError('Firebase is not configured. Add your Firebase values to .env.local and restart the dev server.');
+      return;
+    }
+
     setIsSaving(true);
+    setSaveError(null);
 
     try {
       await addDoc(collection(db, 'astoria_inquiries'), {
@@ -31,6 +38,7 @@ const ChatWidget = () => {
       });
     } catch (error) {
       console.error('Failed to save inquiry to Firestore:', error);
+      setSaveError('Unable to save inquiry. Check Firebase setup and Firestore rules.');
     } finally {
       setIsSaving(false);
     }
@@ -107,6 +115,12 @@ const ChatWidget = () => {
                 {isSaving ? 'Saving…' : 'Submit Query to Staff'}
               </button>
             </div>
+
+            {saveError ? (
+              <p className="mt-3 rounded-3xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                {saveError}
+              </p>
+            ) : null}
           </form>
         </div>
       ) : null}
