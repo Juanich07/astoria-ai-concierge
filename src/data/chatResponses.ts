@@ -1,0 +1,20 @@
+export const chatResponses = {
+  checkIn: 'Check-in begins at 2 PM. We are happy to assist with early arrival requests subject to availability.',
+  checkOut: 'Check-out is at 12 PM. Late check-out may be arranged in advance depending on room availability.',
+  amenities: 'Our resorts offer wellness spas, infinity pools, curated dining, fitness studios, and private beach experiences.',
+  spa: 'The spa features signature rituals, holistic treatments, and bespoke wellness journeys to restore balance.',
+  restaurant: 'Fine dining, private tables, and seasonal menus are available across our resort restaurants.',
+  pool: 'The swimming pools are designed for tranquil relaxation and feature poolside service and sun lounges.',
+  transfers: 'Private airport transfers and chauffeur services can be arranged through your concierge team.',
+  family: 'Family activities include curated excursions, children’s clubs, and private experiences for all ages.',
+  location: 'Each resort is set in an iconic location, blending luxury hospitality with local natural beauty.',
+  parking: 'Secure parking and valet options are available for resort guests at select properties.',
+  wifi: 'Complimentary high-speed WiFi is available throughout the resort for all guests.',
+  dining: 'Our dining experiences range from beachfront cuisine to intimate tasting menus in signature restaurants.',
+  business: 'Business center services and executive support are available for meetings and corporate guests.',
+  gym: 'The fitness center features modern equipment, personal training, and wellness programming.',
+  kids: 'Kids club programming offers creative activities, educational experiences, and supervised play.',
+  petPolicy: 'We welcome pets at selected resorts with dedicated amenities and services for every guest.',
+  contact: 'For reservations and inquiries, our concierge team is available through email, phone, and in-app messages.',
+  general: 'Thank you for your question. This is currently a demonstration of the Astoria AI Concierge interface. Live AI functionality will be connected in a future update.'
+};
