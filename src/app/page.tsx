@@ -6,7 +6,7 @@ import GuestServices from '@/components/GuestServices';
 import FAQSection from '@/components/FAQSection';
 import ContactSection from '@/components/ContactSection';
 import Footer from '@/components/Footer';
-import FloatingChat from '@/components/FloatingChat';
+import ChatWidget from '@/components/ChatWidget';
 
 export default function HomePage() {
   return (
@@ -21,7 +21,7 @@ export default function HomePage() {
         <ContactSection />
       </main>
       <Footer />
-      <FloatingChat />
+      <ChatWidget />
     </div>
   );
 }
