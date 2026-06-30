@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       }
       return { role: (msg.role ?? 'user') as 'user' | 'assistant', content };
     })
-    .filter((m) => m.content);
+    .filter((m: { role: string; content: string }) => m.content);
 
   const result = streamText({
     model: groq('llama-3.1-8b-instant'),

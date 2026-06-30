@@ -16,5 +16,5 @@ export const chatResponses = {
   kids: 'Kids club programming offers creative activities, educational experiences, and supervised play.',
   petPolicy: 'We welcome pets at selected resorts with dedicated amenities and services for every guest.',
   contact: 'For reservations and inquiries, our concierge team is available through email, phone, and in-app messages.',
-  general: 'Thank you for your question. This is currently a demonstration of the Astoria AI Concierge interface. Live AI functionality will be connected in a future update.'
+  general: 'Thank you for your question. This is currently a demonstration of the Astoria Palawan Assistant interface. Live AI functionality will be connected in a future update.'
 };

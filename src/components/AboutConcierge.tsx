@@ -37,7 +37,7 @@ export default function AboutConcierge() {
               A showcase of elevated service, crafted for future AI and resort integration.
             </h2>
             <p className="mt-6 max-w-xl text-base leading-8 text-slate-600">
-              The Astoria AI Concierge is designed as a luxury hotel interface with warm hospitality, minimal elegance, and premium visual refinement.
+              The Astoria Palawan Assistant is designed as a luxury hotel interface with warm hospitality, minimal elegance, and premium visual refinement.
             </p>
           </motion.div>
 

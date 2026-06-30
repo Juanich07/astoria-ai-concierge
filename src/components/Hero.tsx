@@ -15,7 +15,7 @@ export default function Hero() {
               Luxury hospitality, reimagined.
             </span>
             <h1 className="mt-8 max-w-3xl text-5xl font-display font-semibold tracking-tight text-dark sm:text-6xl">
-              Astoria AI Concierge — a refined guest experience for modern luxury travel.
+              Astoria Palawan Assistant — a refined guest experience for modern luxury travel.
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
               Discover a premium concierge interface inspired by iconic resort hospitality. Everything is crafted for a warm, spacious, and elegant guest journey.

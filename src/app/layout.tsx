@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Astoria AI Concierge – Astoria Hotels & Resorts',
+  title: 'Astoria Palawan Assistant – Astoria Hotels & Resorts',
   description: 'Luxury hotel concierge experience with a premium AI-first interface.',
 };
 

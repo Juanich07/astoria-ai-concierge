@@ -11,7 +11,7 @@ const initialMessages: ChatMessage[] = [
   {
     id: 'm1',
     role: 'assistant',
-    content: 'Welcome to Astoria Concierge. Ask me about check-in, dining, spa, or resort services.'
+    content: 'Welcome to Astoria Palawan Assistant. Ask me about check-in, dining, spa, or resort services.'
   }
 ];
 
@@ -98,7 +98,7 @@ export default function FloatingChat() {
                   <MessageCircle className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="font-semibold">Astoria Concierge</p>
+                  <p className="font-semibold">Astoria Palawan Assistant</p>
                   <p className="text-xs text-slate-300">Online</p>
                 </div>
               </div>
@@ -111,7 +111,7 @@ export default function FloatingChat() {
               {messages.map((message) => (
                 <div key={message.id} className={`flex ${message.role === 'assistant' ? 'justify-start' : 'justify-end'}`}>
                   <div className={`max-w-[84%] rounded-3xl px-4 py-3 shadow-sm ${message.role === 'assistant' ? 'bg-slate-100 text-slate-800' : 'bg-amber-500 text-slate-950'}`}>
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{message.role === 'assistant' ? 'Astoria Concierge' : 'You'}</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{message.role === 'assistant' ? 'Astoria Palawan Assistant' : 'You'}</p>
                     <p className="mt-2 leading-7">{message.content}</p>
                   </div>
                 </div>

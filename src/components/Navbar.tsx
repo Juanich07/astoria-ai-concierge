@@ -36,7 +36,7 @@ export default function Navbar() {
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
         <a href="#home" className="text-lg font-display text-dark">
-          Astoria AI Concierge
+          Astoria Palawan Assistant
         </a>
 
         <nav className="hidden items-center gap-8 lg:flex">

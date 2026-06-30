@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useChat } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 
@@ -21,8 +22,9 @@ const ChatWidget = () => {
   const [input, setInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const { messages, sendMessage, status, error } = useChat({
-    api: '/api/chat',
+    transport: new DefaultChatTransport({ api: '/api/chat' }),
   });
 
   const isLoading = status === 'submitted' || status === 'streaming';
@@ -35,31 +37,44 @@ const ChatWidget = () => {
   };
 
   const handleSaveInquiry = async () => {
-    if (!messages.length) {
+    const trimmedInput = input.trim();
+    const conversationSnapshot = [
+      ...messages.map((message) => ({
+        role: message.role,
+        content: getMessageText(message),
+      })),
+      ...(trimmedInput ? [{ role: 'user', content: trimmedInput }] : []),
+    ];
+
+    if (!conversationSnapshot.length) {
       return;
     }
 
     if (!isFirebaseConfigured || !db) {
       setSaveError('Firebase is not configured. Add your Firebase values to .env.local and restart the dev server.');
+      setSaveSuccess(null);
       return;
     }
 
     setIsSaving(true);
     setSaveError(null);
+    setSaveSuccess(null);
 
     try {
-      await addDoc(collection(db, 'astoria_inquiries'), {
+      const docRef = await addDoc(collection(db, 'astoria_inquiries'), {
         createdAt: serverTimestamp(),
-        conversation: messages.map((message) => ({
-          role: message.role,
-          content: getMessageText(message),
-        })),
+        conversation: conversationSnapshot,
         source: 'chat-widget',
         status: 'pending',
       });
+      if (trimmedInput) {
+        setInput('');
+      }
+      setSaveSuccess(`Saved to Firestore (astoria_inquiries) with ID: ${docRef.id}`);
     } catch (error) {
       console.error('Failed to save inquiry to Firestore:', error);
       setSaveError('Unable to save inquiry. Check Firebase setup and Firestore rules.');
+      setSaveSuccess(null);
     } finally {
       setIsSaving(false);
     }
@@ -72,13 +87,13 @@ const ChatWidget = () => {
         onClick={() => setIsOpen((value) => !value)}
         className="inline-flex items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-semibold text-slate-950 shadow-2xl shadow-amber-500/30 transition hover:bg-amber-400"
       >
-        {isOpen ? 'Close Concierge' : 'Astoria Concierge'}
+        {isOpen ? 'Close Assistant' : 'Astoria Palawan Assistant'}
       </button>
 
       {isOpen ? (
         <div className="mt-4 w-[360px] max-w-full overflow-hidden rounded-[2rem] border border-amber-200/30 bg-slate-950/95 shadow-2xl shadow-slate-950/40 backdrop-blur-xl">
           <div className="border-b border-amber-500/20 bg-slate-900 px-5 py-4">
-            <h2 className="text-lg font-semibold text-amber-200">Astoria Chatbot</h2>
+            <h2 className="text-lg font-semibold text-amber-200">Astoria Palawan Assistant</h2>
             <p className="mt-1 text-xs text-slate-400">Ask about amenities, dining, spa, resort policies, or guest services.</p>
           </div>
 
@@ -98,7 +113,7 @@ const ChatWidget = () => {
                   }`}
                 >
                   <p className="text-[10px] uppercase tracking-[0.25em] text-slate-500">
-                    {message.role === 'user' ? 'You' : 'Astoria Concierge'}
+                    {message.role === 'user' ? 'You' : 'Astoria Palawan Assistant'}
                   </p>
                   <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{getMessageText(message)}</p>
                 </div>
@@ -136,7 +151,7 @@ const ChatWidget = () => {
               <button
                 type="button"
                 onClick={handleSaveInquiry}
-                disabled={isSaving || messages.length === 0}
+                disabled={isSaving || (messages.length === 0 && !input.trim())}
                 className="w-full rounded-full border border-amber-300 bg-slate-900/90 px-4 py-3 text-sm font-semibold text-amber-100 transition hover:border-amber-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               >
                 {isSaving ? 'Saving…' : 'Submit Query to Staff'}
@@ -146,6 +161,12 @@ const ChatWidget = () => {
             {saveError ? (
               <p className="mt-3 rounded-3xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                 {saveError}
+              </p>
+            ) : null}
+
+            {saveSuccess ? (
+              <p className="mt-3 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                {saveSuccess}
               </p>
             ) : null}
           </form>

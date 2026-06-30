@@ -7,7 +7,7 @@ export default function Footer() {
     <footer className="bg-dark px-6 py-16 text-white lg:px-8">
       <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[1.4fr_0.9fr_0.9fr]">
         <div className="space-y-6">
-          <p className="text-sm uppercase tracking-[0.3em] text-amber-300">Astoria AI Concierge</p>
+          <p className="text-sm uppercase tracking-[0.3em] text-amber-300">Astoria Palawan Assistant</p>
           <p className="max-w-md text-sm leading-7 text-slate-300">
             A luxury interface built for hospitality storytelling, premium service moments, and future-ready AI integration.
           </p>

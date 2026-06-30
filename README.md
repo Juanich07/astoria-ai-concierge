@@ -1,48 +1,133 @@
-# Astoria AI Concierge
+# Astoria Palawan Assistant
 
-## Setup steps
+Astoria Palawan Assistant is a Next.js hospitality chatbot interface with a real AI chat flow powered by Groq and optional Firestore inquiry saving.
+
+## Features
+
+- Real-time chat UI connected to `src/app/api/chat/route.ts`
+- Grounded answers from local data files:
+  - `src/data/faqs.ts`
+  - `src/data/resorts.ts`
+  - `src/data/services.ts`
+- Strict fallback behavior for unknown questions
+- Optional "Submit Query to Staff" persistence to Firestore
+- Responsive marketing site sections with chat widget overlay
+
+## Tech Stack
+
+- Next.js 15 (App Router)
+- React 19
+- TypeScript
+- Tailwind CSS
+- AI SDK (`ai`, `@ai-sdk/react`, `@ai-sdk/groq`)
+- Firebase Firestore
+
+## Quick Start
 
 1. Install dependencies:
-   ```bash
-   npm install
-   ```
-2. Copy the example environment file:
-   ```bash
-   cp .env.local.example .env.local
-   ```
-3. Open `.env.local` and add your secrets:
-   - `OPENAI_API_KEY=sk-...`
-   - Firebase values for `NEXT_PUBLIC_FIREBASE_*`
-4. Start the development server:
-   ```bash
-   npm run dev
-   ```
-5. Open the app in the browser. If port 3000 is busy, Next.js may use 3001.
 
-## What was added/changed
+```bash
+npm install
+```
 
-- `src/data/knowledge.ts`
-  - builds resort-specific knowledge from `src/data/resorts.ts`, `src/data/faqs.ts`, and `src/data/services.ts`
-- `src/app/api/chat/route.ts`
-  - uses the OpenAI REST API to generate responses from `gpt-3.5-turbo`
-  - requires `OPENAI_API_KEY`
-- `src/components/ChatWidget.tsx`
-  - real chat UI connected to `/api/chat`
-  - replaced the old mock chat functionality
-  - improved button styling and error handling
-- `src/app/page.tsx`
-  - now renders `ChatWidget` instead of the mock `FloatingChat`
-- `src/components/Navbar.tsx`
-  - fixed server-side rendering issue by using `useEffect` for `window` scroll handling
-- `.env.local.example`
-  - updated to include `OPENAI_API_KEY`
+2. Copy environment template:
 
-## Notes
+```bash
+cp .env.local.example .env.local
+```
 
-- Do not commit `.env.local` to Git.
-- If you move the project to another laptop, repeat:
-  1. `npm install`
-  2. create `.env.local`
-  3. set `OPENAI_API_KEY`
-  4. run `npm run dev`
-- If you see a 500 error from the chat API, check that `OPENAI_API_KEY` is configured correctly.
+For Windows PowerShell:
+
+```powershell
+Copy-Item .env.local.example .env.local
+```
+
+3. Fill in `.env.local` values:
+- `GROQ_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_*`
+
+4. Start development server:
+
+```bash
+npm run dev
+```
+
+5. Open `http://localhost:3000`
+
+## Environment Variables
+
+Required for AI chat:
+
+- `GROQ_API_KEY`
+
+Required for Firestore save button:
+
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
+- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+- `NEXT_PUBLIC_FIREBASE_APP_ID`
+- `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` (optional)
+
+## NPM Scripts
+
+- `npm run dev` - start local development server
+- `npm run build` - create production build
+- `npm run start` - run production server
+- `npm run lint` - run lint checks
+
+## How Responses Are Generated
+
+1. User sends a message from `src/components/ChatWidget.tsx`
+2. Request goes to `POST /api/chat`
+3. Route builds a grounded system prompt from:
+   - FAQs
+   - resorts
+   - services
+4. Groq model `llama-3.1-8b-instant` generates the response
+5. Streamed response is returned to the UI
+
+## Customize Assistant Knowledge
+
+Edit these files to change what the assistant knows:
+
+- `src/data/faqs.ts`
+- `src/data/resorts.ts`
+- `src/data/services.ts`
+
+Update behavioral rules in:
+
+- `src/app/api/chat/route.ts` (`systemPrompt`)
+
+## Troubleshooting
+
+### Internal Server Error in dev (`routes-manifest` or `middleware-manifest` missing)
+
+On Windows this can happen if `.next` is corrupted or locked by a stale Node process.
+
+Use:
+
+```powershell
+Stop-Process -Name node -Force -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue
+npm run dev
+```
+
+### Chat sends but no answer
+
+Check:
+
+- `GROQ_API_KEY` is valid
+- `POST /api/chat` returns 200 in server logs
+- You have not hit provider rate limits
+
+### Save to staff fails
+
+Check Firebase config and Firestore rules.
+
+## Security Notes
+
+- Never commit `.env.local`
+- Rotate API keys if they are shared accidentally
+- Keep provider keys server-side only
