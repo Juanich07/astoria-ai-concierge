@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
+import { MessageCircle, Send } from 'lucide-react';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 
@@ -23,7 +24,7 @@ const ChatWidget = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
-  const { messages, sendMessage, status, error } = useChat({
+  const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({ api: '/api/chat' }),
   });
 
@@ -85,43 +86,56 @@ const ChatWidget = () => {
       <button
         type="button"
         onClick={() => setIsOpen((value) => !value)}
-        className="inline-flex items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-semibold text-slate-950 shadow-2xl shadow-amber-500/30 transition hover:bg-amber-400"
+        className="inline-flex items-center gap-2 rounded-full bg-[#1f6feb] px-5 py-3 text-sm font-semibold text-white shadow-xl transition hover:bg-[#1a5fcb]"
       >
+        <MessageCircle className="h-4 w-4" />
         {isOpen ? 'Close Assistant' : 'Astoria Palawan Assistant'}
       </button>
 
       {isOpen ? (
-        <div className="mt-4 w-[360px] max-w-full overflow-hidden rounded-[2rem] border border-amber-200/30 bg-slate-950/95 shadow-2xl shadow-slate-950/40 backdrop-blur-xl">
-          <div className="border-b border-amber-500/20 bg-slate-900 px-5 py-4">
-            <h2 className="text-lg font-semibold text-amber-200">Astoria Palawan Assistant</h2>
-            <p className="mt-1 text-xs text-slate-400">Ask about amenities, dining, spa, resort policies, or guest services.</p>
+        <div className="mt-4 w-[360px] max-w-[92vw] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+          <div className="bg-[#1f6feb] px-4 py-4 text-white">
+            <p className="text-sm font-semibold">Astoria Palawan Assistant</p>
+            <p className="mt-1 text-xs text-blue-100">Talk with us</p>
           </div>
 
-          <div className="max-h-96 space-y-3 overflow-y-auto px-4 py-4 text-sm text-slate-100">
+          <div className="max-h-[340px] space-y-3 overflow-y-auto bg-[#f8fafc] px-4 py-4 text-sm">
             {messages.length === 0 ? (
-              <div className="rounded-3xl border border-amber-500/20 bg-slate-900/80 p-4 text-slate-300">
-                Start a conversation to receive concierge guidance and resort information.
+              <div className="max-w-[86%] rounded-2xl bg-[#e5e7eb] px-4 py-3 text-slate-800">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Bot</p>
+                <p className="mt-1">Welcome, Guest. How may I help you today?</p>
               </div>
             ) : (
               messages.map((message, index) => (
                 <div
                   key={`${message.id ?? index}-${message.role}`}
-                  className={`rounded-3xl px-4 py-3 ${
+                  className={`max-w-[86%] rounded-2xl px-4 py-3 ${
                     message.role === 'user'
-                      ? 'self-end bg-amber-500/10 text-amber-100'
-                      : 'bg-slate-800/80 text-slate-100'
+                      ? 'ml-auto bg-[#2b7fff] text-white'
+                      : 'bg-[#e5e7eb] text-slate-900'
                   }`}
                 >
-                  <p className="text-[10px] uppercase tracking-[0.25em] text-slate-500">
-                    {message.role === 'user' ? 'You' : 'Astoria Palawan Assistant'}
+                  <p
+                    className={`text-[10px] font-semibold uppercase tracking-wide ${
+                      message.role === 'user' ? 'text-blue-100' : 'text-slate-500'
+                    }`}
+                  >
+                    {message.role === 'user' ? 'You' : 'Bot'}
                   </p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{getMessageText(message)}</p>
+                  <p className="mt-1 whitespace-pre-wrap leading-6">{getMessageText(message)}</p>
                 </div>
               ))
             )}
+
+            {isLoading ? (
+              <div className="max-w-[86%] rounded-2xl bg-[#e5e7eb] px-4 py-3 text-slate-700">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Bot</p>
+                <p className="mt-1">Typing...</p>
+              </div>
+            ) : null}
           </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4 border-t border-amber-500/20 bg-slate-950 px-4 py-4">
+          <form onSubmit={handleSubmit} className="space-y-3 border-t border-slate-200 bg-white px-4 py-4">
             <label className="sr-only" htmlFor="chat-input">
               Ask the concierge a question.
             </label>
@@ -135,16 +149,17 @@ const ChatWidget = () => {
                   handleSubmit(e as unknown as React.FormEvent);
                 }
               }}
-              placeholder="Ask about check-in, dining, spa, or guest services..."
-              className="min-h-[120px] w-full rounded-[1.5rem] border border-slate-800 bg-slate-900/95 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-amber-300 focus:ring-2 focus:ring-amber-500/30"
+              placeholder="Compose your message..."
+              className="min-h-[88px] w-full resize-none rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#2b7fff] focus:ring-2 focus:ring-[#2b7fff]/20"
             />
 
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
               <button
                 type="submit"
                 disabled={isLoading || !input.trim()}
-                className="inline-flex min-w-[150px] items-center justify-center rounded-full bg-amber-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2b7fff] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1f6feb] disabled:cursor-not-allowed disabled:opacity-60"
               >
+                <Send className="h-4 w-4" />
                 {isLoading ? 'Sending…' : 'Send Message'}
               </button>
 
@@ -152,20 +167,20 @@ const ChatWidget = () => {
                 type="button"
                 onClick={handleSaveInquiry}
                 disabled={isSaving || (messages.length === 0 && !input.trim())}
-                className="w-full rounded-full border border-amber-300 bg-slate-900/90 px-4 py-3 text-sm font-semibold text-amber-100 transition hover:border-amber-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                className="w-full rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               >
                 {isSaving ? 'Saving…' : 'Submit Query to Staff'}
               </button>
             </div>
 
             {saveError ? (
-              <p className="mt-3 rounded-3xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+              <p className="mt-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
                 {saveError}
               </p>
             ) : null}
 
             {saveSuccess ? (
-              <p className="mt-3 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+              <p className="mt-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
                 {saveSuccess}
               </p>
             ) : null}
