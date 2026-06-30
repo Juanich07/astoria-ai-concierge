@@ -106,7 +106,7 @@ const ChatWidget = () => {
             )}
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-3 border-t border-amber-500/20 bg-slate-950 px-4 py-4">
+              <form onSubmit={handleSubmit} className="space-y-4 border-t border-amber-500/20 bg-slate-950 px-4 py-4">
             <label className="sr-only" htmlFor="chat-input">
               Ask the concierge a question.
             </label>
@@ -121,10 +121,10 @@ const ChatWidget = () => {
                 }
               }}
               placeholder="Ask about check-in, dining, spa, or guest services..."
-              className="h-24 w-full rounded-3xl border border-slate-800 bg-slate-900/95 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20"
+              className="min-h-[120px] w-full rounded-[1.5rem] border border-slate-800 bg-slate-900/95 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-amber-300 focus:ring-2 focus:ring-amber-500/30"
             />
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
               <button
                 type="submit"
                 disabled={isLoading || !input.trim()}
@@ -137,7 +137,7 @@ const ChatWidget = () => {
                 type="button"
                 onClick={handleSaveInquiry}
                 disabled={isSaving || messages.length === 0}
-                className="inline-flex min-w-[150px] items-center justify-center rounded-full border border-amber-400 bg-slate-900/90 px-4 py-3 text-sm font-semibold text-amber-200 transition hover:border-amber-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-full border border-amber-300 bg-slate-900/90 px-4 py-3 text-sm font-semibold text-amber-100 transition hover:border-amber-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               >
                 {isSaving ? 'Saving…' : 'Submit Query to Staff'}
               </button>

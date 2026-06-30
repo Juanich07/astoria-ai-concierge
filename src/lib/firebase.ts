@@ -24,7 +24,7 @@ const isFirebaseConfigured =
   typeof firebaseConfig.appId === 'string' &&
   firebaseConfig.appId.length > 0;
 
-let db = null;
+let db: ReturnType<typeof getFirestore> | null = null;
 
 if (isFirebaseConfigured) {
   const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();

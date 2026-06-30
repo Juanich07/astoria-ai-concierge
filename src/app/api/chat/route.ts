@@ -34,6 +34,8 @@ const knowledgePrompt = [
   ...services.map((service) => `- ${service.title}\n  ${service.description}`),
 ].join('\n');
 
+const fullSystemPrompt = `${systemPrompt}\n\n${knowledgePrompt}`;
+
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const messages = Array.isArray(body.messages) ? body.messages : [];
