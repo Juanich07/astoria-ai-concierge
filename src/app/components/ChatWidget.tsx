@@ -1,17 +1,38 @@
 "use client";
 
 import { useState } from 'react';
-import { useChat } from 'ai/react';
+import { useChat } from '@ai-sdk/react';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 
+const getMessageText = (message: { content?: string; parts?: Array<{ type: string; text?: string }> }) => {
+  if (typeof message.content === 'string' && message.content) return message.content;
+  if (Array.isArray(message.parts)) {
+    return message.parts
+      .filter((p) => p.type === 'text')
+      .map((p) => p.text ?? '')
+      .join('');
+  }
+  return '';
+};
+
 const ChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [input, setInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
+  const { messages, sendMessage, status, error } = useChat({
     api: '/api/chat',
   });
+
+  const isLoading = status === 'submitted' || status === 'streaming';
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
+    sendMessage({ parts: [{ type: 'text', text: input.trim() }] });
+    setInput('');
+  };
 
   const handleSaveInquiry = async () => {
     if (!messages.length) {
@@ -31,7 +52,7 @@ const ChatWidget = () => {
         createdAt: serverTimestamp(),
         conversation: messages.map((message) => ({
           role: message.role,
-          content: message.content,
+          content: getMessageText(message),
         })),
         source: 'chat-widget',
         status: 'pending',
@@ -57,7 +78,7 @@ const ChatWidget = () => {
       {isOpen ? (
         <div className="mt-4 w-[360px] max-w-full overflow-hidden rounded-[2rem] border border-amber-200/30 bg-slate-950/95 shadow-2xl shadow-slate-950/40 backdrop-blur-xl">
           <div className="border-b border-amber-500/20 bg-slate-900 px-5 py-4">
-            <h2 className="text-lg font-semibold text-amber-200">Astoria Guest Concierge</h2>
+            <h2 className="text-lg font-semibold text-amber-200">Astoria Chatbot</h2>
             <p className="mt-1 text-xs text-slate-400">Ask about amenities, dining, spa, resort policies, or guest services.</p>
           </div>
 
@@ -79,7 +100,7 @@ const ChatWidget = () => {
                   <p className="text-[10px] uppercase tracking-[0.25em] text-slate-500">
                     {message.role === 'user' ? 'You' : 'Astoria Concierge'}
                   </p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{message.content}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{getMessageText(message)}</p>
                 </div>
               ))
             )}
@@ -92,7 +113,13 @@ const ChatWidget = () => {
             <textarea
               id="chat-input"
               value={input}
-              onChange={handleInputChange}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit(e as unknown as React.FormEvent);
+                }
+              }}
               placeholder="Ask about check-in, dining, spa, or guest services..."
               className="h-24 w-full rounded-3xl border border-slate-800 bg-slate-900/95 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20"
             />
@@ -100,8 +127,8 @@ const ChatWidget = () => {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button
                 type="submit"
-                disabled={isLoading}
-                className="inline-flex min-w-[150px] items-center justify-center rounded-full bg-amber-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isLoading || !input.trim()}
+                className="inline-flex min-w-[150px] items-center justify-center rounded-full bg-amber-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isLoading ? 'Sending…' : 'Send Message'}
               </button>
