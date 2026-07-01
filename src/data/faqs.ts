@@ -7,7 +7,7 @@ export const faqs = [
   {
     id: 'front-desk',
     question: 'How do I reach the Front Desk?',
-    answer: 'Dial "0" from your room phone.'
+    answer: 'Front Desk Locations:\n- The Nest\n- The Canopy\nDial "0" from your room or visit in person.'
   },
   {
     id: 'medical-emergency',
@@ -112,7 +112,12 @@ export const faqs = [
   {
     id: 'island-tours',
     question: 'What island tours are offered?',
-    answer: 'Popular tours (group rates):\n- Underground River: Php 3,400/person\n- Honda Bay: Php 2,400/person\n- City Tour: Php 1,430/person\n- El Nido: Php 4,740/person\n- Port Barton: Starting at Php 7,800\nDial "0" for bookings.'
+    answer: 'Popular Tours:\n\nUnderground River Tour: Explore the world\'s longest underground river, a UNESCO World Heritage Site. Starts at Php 6,900 for 2 guests.\n\nHonda Bay Tour: Visit stunning beaches and crystal-clear waters. Starts at Php 6,480 for 2 guests.\n\nCity Tour: Discover Puerto Princesa\'s landmarks and attractions. Starts at Php 4,600 for 2 guests.\n\nPort Barton Tour: Experience tranquil beaches and islands. Starts at Php 7,800 for 2 guests.\n\nEl Nido Tour: Explore towering limestone cliffs and crystal-clear lagoons. Starts at Php 12,700 for 2 guests.\n\nSanobar Tour: Exclusive snorkeling experience. Php 1,200 per person.'
+  },
+  {
+    id: 'tour-booking',
+    question: 'How do I book a tour?',
+    answer: 'Book your tour by:\n- Dial "0" from your room\n- Phone: +639998436299\n- Email: tours@astoriapalawan.com\n- Visit The Canopy Front Office\n\nTours are subject to availability and may have specific requirements.'
   },
   {
     id: 'domestic-animals',
