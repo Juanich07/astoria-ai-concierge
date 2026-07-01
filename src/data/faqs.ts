@@ -97,7 +97,7 @@ export const faqs = [
   {
     id: 'recreational-activities',
     question: 'What recreational activities are available?',
-    answer: 'Videoke, billiards, table tennis, scrabble, chess, PS games. Dial "0".'
+    answer: 'Recreation Building (#29) is open 8:00 AM - 11:00 PM. Available activities include billiards, table tennis, board games, video consoles, kiddie playpen, and videoke. Dial "0" for assistance.'
   },
   {
     id: 'videoke-location',
@@ -105,14 +105,29 @@ export const faqs = [
     answer: 'Videoke Room:\n- Location: BOH Building, 2nd floor\n- Reservations: Visit Canopy Front Office or dial "0"'
   },
   {
+    id: 'recreation-building-details',
+    question: 'What other recreation facilities are available?',
+    answer: 'Putting Green (#27 and #28): 7:00 AM - 6:00 PM. Kiddie playground is available. Mini golf putters can be requested at the Recreation Office. Gym (#44): 6:00 AM - 10:00 PM.'
+  },
+  {
     id: 'beach-activities',
     question: 'What beach activities are available?',
-    answer: 'Paddleboards (1 hr), bicycles (1 hr), kayak, volleyball, badminton.'
+    answer: 'Beachfront activities include volleyball, badminton, frisbee, sand toys, clear kayak, kayak, paddle board, and bicycles. The Halodome beachfront area is open 7:00 AM - 6:00 PM. Some activities may require payment or reservation.'
+  },
+  {
+    id: 'recreation-rates',
+    question: 'What are the recreation and water activity rates?',
+    answer: 'Video consoles: 1 hour free, additional hours P100. Videoke: 1 time free, additional hours P500. Clear kayak: P100 per hour. Paddle board: P300 per hour. ATV rental: P800 for 30 minutes or P1,400 for 1 hour.'
+  },
+  {
+    id: 'sandbar-tour',
+    question: 'Do I need to reserve the Sandbar tour?',
+    answer: 'Yes. Please book the Sandbar tour in advance at the Tour Desk or Front Office.'
   },
   {
     id: 'island-tours',
     question: 'What island tours are offered?',
-    answer: 'Popular Tours:\n\nUnderground River Tour: Explore the world\'s longest underground river, a UNESCO World Heritage Site. Starts at Php 6,900 for 2 guests.\n\nHonda Bay Tour: Visit stunning beaches and crystal-clear waters. Starts at Php 6,480 for 2 guests.\n\nCity Tour: Discover Puerto Princesa\'s landmarks and attractions. Starts at Php 4,600 for 2 guests.\n\nPort Barton Tour: Experience tranquil beaches and islands. Starts at Php 7,800 for 2 guests.\n\nEl Nido Tour: Explore towering limestone cliffs and crystal-clear lagoons. Starts at Php 12,700 for 2 guests.\n\nSandbar Tour: Exclusive snorkeling experience. Php 1,200 per person.'
+    answer: 'Popular Tours:\n\nUnderground River Tour: Explore the world\'s longest underground river, a UNESCO World Heritage Site. Starts at Php 6,900 for 2 guests.\n\nHonda Bay Tour: Visit stunning beaches and crystal-clear waters. Starts at Php 6,480 for 2 guests.\n\nCity Tour: Discover Puerto Princesa\'s landmarks and attractions. Starts at Php 4,600 for 2 guests.\n\nPort Barton Tour: Experience tranquil beaches and islands. Starts at Php 7,800 for 2 guests.\n\nEl Nido Tour: Explore towering limestone cliffs and crystal-clear lagoons. Starts at Php 12,700 for 2 guests.\n\nSandbar Tour: Exclusive snorkeling experience. Reserve in advance.'
   },
   {
     id: 'tour-booking',

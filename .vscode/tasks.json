@@ -1,0 +1,61 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "dev-server",
+			"type": "shell",
+			"command": "npm run dev",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "dev-server-3000",
+			"type": "shell",
+			"command": "npm run dev -- --port 3000",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "kill-stale-3000",
+			"type": "shell",
+			"command": "taskkill /F /PID 10744",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "fresh-dev",
+			"type": "shell",
+			"command": "cd /d c:\\Users\\Housekeeping\\astoria-chatbot && if exist .next\\trace del /f /q .next\\trace && if exist .next rmdir /s /q .next && npm run dev -- --port 3000",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "fresh-dev-3000",
+			"type": "shell",
+			"command": "cd /d c:\\Users\\Housekeeping\\astoria-chatbot; if (Test-Path .next\\trace) { Remove-Item -Force .next\\trace }; if (Test-Path .next) { Remove-Item -Recurse -Force .next }; npm run dev -- --port 3000",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "fresh-dev-3000-clean",
+			"type": "shell",
+			"command": "cd c:\\Users\\Housekeeping\\astoria-chatbot; Remove-Item -Force .next\\trace -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue; npm run dev -- --port 3000",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "kill-port-3000",
+			"type": "shell",
+			"command": "Get-NetTCPConnection -LocalPort 3000 -State Listen | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Stop-Process -Id $_ -Force }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "dev-on-3000",
+			"type": "shell",
+			"command": "cd c:\\Users\\Housekeeping\\astoria-chatbot; Remove-Item -Force .next\\trace -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue; npm run dev -- --port 3000",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}
