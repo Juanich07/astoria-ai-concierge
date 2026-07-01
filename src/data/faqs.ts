@@ -100,6 +100,11 @@ export const faqs = [
     answer: 'Available to checked-in guests (with charges): Videoke, Billiards, Table tennis, Scrabble, Chess, and Playstation games. Please dial "0" to arrange any activities.'
   },
   {
+    id: 'videoke-location',
+    question: 'Where is the videoke room located?',
+    answer: 'The videoke room is located at BOH Building, 2nd floor. To make a reservation, please visit the Front Office in The Canopy or dial "0" for assistance.'
+  },
+  {
     id: 'beach-activities',
     question: 'What beach activities are available?',
     answer: 'For checked-in guests: Paddleboards (1 hour maximum included; additional usage charged; weather/tide dependent), Bicycles (1 hour included; additional usage charged), Crystal kayak (with charges), Volleyball, and Badminton. Ask the lifeguard on duty for assistance.'
