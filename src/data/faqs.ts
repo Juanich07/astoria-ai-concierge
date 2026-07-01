@@ -52,7 +52,7 @@ export const faqs = [
   {
     id: 'restaurant-hours',
     question: 'Tell me about The Reserve?',
-    answer: 'The Reserve: 6:30 AM - 10:00 PM.'
+    answer: 'The Reserve Restaurant:\n- Hours: 6:30 AM - 10:00 PM daily\n- In-room dining: 6:00 AM - 11:30 PM (orders until 10:30 PM)\nDial "0" for reservations.'
   },
   {
     id: 'in-room-dining',
@@ -102,7 +102,7 @@ export const faqs = [
   {
     id: 'videoke-location',
     question: 'Where is the videoke room located?',
-    answer: 'BOH Building, 2nd floor. Reserve at Canopy Front Office.'
+    answer: 'Videoke Room:\n- Location: BOH Building, 2nd floor\n- Reservations: Visit Canopy Front Office or dial "0"'
   },
   {
     id: 'beach-activities',
@@ -112,7 +112,7 @@ export const faqs = [
   {
     id: 'island-tours',
     question: 'What island tours are offered?',
-    answer: 'Underground River (Php 3,400), Honda Bay (Php 2,400), City Tour (Php 1,430), Port Barton, El Nido (Php 4,740). Dial "0" to book.'
+    answer: 'Popular tours (group rates):\n- Underground River: Php 3,400/person\n- Honda Bay: Php 2,400/person\n- City Tour: Php 1,430/person\n- El Nido: Php 4,740/person\n- Port Barton: Starting at Php 7,800\nDial "0" for bookings.'
   },
   {
     id: 'domestic-animals',
@@ -127,17 +127,17 @@ export const faqs = [
   {
     id: 'spa-massage-services',
     question: 'What massage services are available at the spa?',
-    answer: 'SPA-TIFY at Alcove 2nd floor. Swedish, Shiatsu, Hilot, hot stone, body scrub. P800-P2,000.'
+    answer: 'SPA-TIFY at The Alcove, 2nd floor offers:\n- Swedish/Shiatsu: P800 (60 min) | P1,200 (90 min)\n- Traditional Hilot: P1,000 (60 min) | P1,300 (90 min)\n- Hot Stone: P1,200 (60 min) | P1,500 (90 min)\n- Body Scrub: P2,000 (120 min)'
   },
   {
     id: 'spa-nail-care',
     question: 'What nail care services are available?',
-    answer: 'Pedicure P800/P500, gel manicure P700, regular P400. Alcove 2nd floor.'
+    answer: 'SPA-TIFY offers:\n- Pedicure: P800 (with foot spa) | P500 (foot spa only)\n- Gel Manicure/Pedicure: P700\n- Regular Manicure/Pedicure: P400\n- Gel Removal: P300'
   },
   {
     id: 'spa-inquiries',
     question: 'How do I book spa services?',
-    answer: 'Visit Alcove reception 2nd floor or dial "0". 10:00 AM - 12:00 AM.'
+    answer: 'Visit The Alcove reception (2nd floor) or dial "0" from your room. Open Monday-Sunday, 10:00 AM - 12:00 AM.'
   },
   {
     id: 'fitness-gym-access',
