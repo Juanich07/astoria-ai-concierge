@@ -90,14 +90,14 @@ export const tourPackages = [
     itinerary: ['Small or big lagoon', 'Payong payong', 'Secret lagoon', 'Shimizu island', 'Seven commando beach']
   },
   {
-    id: 'sanobar',
-    name: 'Sanobar',
+    id: 'sandbar',
+    name: 'Sandbar',
     duration: '7:30 AM - 9:30 AM / 10:00 AM - 12:00 PM',
     pricing: [
       { pax: 'Per Person', price: 1200 }
     ],
     inclusions: ['Boat ride', 'Bottled water', 'Towels'],
-    itinerary: ['Sanobar']
+    itinerary: ['Sandbar']
   }
 ];
 
@@ -119,3 +119,9 @@ export const sharedGroupTours = [
     rate: 'Php 4,740/pax'
   }
 ];
+
+export const tourContact = {
+  phone: '+639998436299',
+  email: 'tours@astoriapalawan.com',
+  note: 'You can also dial "0" from your room to reach the Front Desk for tour bookings.'
+};

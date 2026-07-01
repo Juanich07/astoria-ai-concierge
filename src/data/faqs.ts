@@ -112,7 +112,7 @@ export const faqs = [
   {
     id: 'island-tours',
     question: 'What island tours are offered?',
-    answer: 'Popular Tours:\n\nUnderground River Tour: Explore the world\'s longest underground river, a UNESCO World Heritage Site. Starts at Php 6,900 for 2 guests.\n\nHonda Bay Tour: Visit stunning beaches and crystal-clear waters. Starts at Php 6,480 for 2 guests.\n\nCity Tour: Discover Puerto Princesa\'s landmarks and attractions. Starts at Php 4,600 for 2 guests.\n\nPort Barton Tour: Experience tranquil beaches and islands. Starts at Php 7,800 for 2 guests.\n\nEl Nido Tour: Explore towering limestone cliffs and crystal-clear lagoons. Starts at Php 12,700 for 2 guests.\n\nSanobar Tour: Exclusive snorkeling experience. Php 1,200 per person.'
+    answer: 'Popular Tours:\n\nUnderground River Tour: Explore the world\'s longest underground river, a UNESCO World Heritage Site. Starts at Php 6,900 for 2 guests.\n\nHonda Bay Tour: Visit stunning beaches and crystal-clear waters. Starts at Php 6,480 for 2 guests.\n\nCity Tour: Discover Puerto Princesa\'s landmarks and attractions. Starts at Php 4,600 for 2 guests.\n\nPort Barton Tour: Experience tranquil beaches and islands. Starts at Php 7,800 for 2 guests.\n\nEl Nido Tour: Explore towering limestone cliffs and crystal-clear lagoons. Starts at Php 12,700 for 2 guests.\n\nSandbar Tour: Exclusive snorkeling experience. Php 1,200 per person.'
   },
   {
     id: 'tour-booking',
