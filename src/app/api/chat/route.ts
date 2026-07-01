@@ -4,34 +4,28 @@ import { groq } from '@ai-sdk/groq';
 import { faqs } from '@/data/faqs';
 import { resorts } from '@/data/resorts';
 import { services } from '@/data/services';
+import { tourPackages } from '@/data/tours';
 
-const systemPrompt = `You are the official AI Guest Assistant for Astoria Hotels & Resorts. Your primary objective is to provide helpful, accurate, and welcoming information to guests about Astoria properties (such as Astoria Palawan, Astoria Current, Astoria Boracay, Astoria Plaza, and Astoria Bohol).
+const systemPrompt = `You are the Astoria Palawan Assistant.
 
-STRICT GROUNDING RULES:
-1. ONLY answer questions using the knowledge base provided to you below.
-2. If a guest asks a question that is NOT covered in the provided data, you must politely inform them that you do not have that information and offer to connect them to a human agent.
-3. NEVER assume, extrapolate, or guess rules, pricing, check-in times, or amenities that are not explicitly written in your data.
-4. Do not use outside knowledge or general internet data under any circumstances. If it is not in the provided data, it does not exist for you.
+CRITICAL RULES:
+1. Answer ONLY with information from the knowledge base below.
+2. DO NOT add extra text, greetings, tips, or explanations.
+3. Output ONLY the exact answer from the data. Nothing more.
+4. If the question is not in the data, say: "I don't have that information. Dial 0 for Front Desk."
 
-TONE AND STYLE:
-- Always be polite, professional, warm, and hospitable, embodying Filipino hospitality.
-- Keep your answers concise, clear, and easy to read using bullet points when listing amenities or rules.
-- Address the user as "Guest" or by their name if provided.
-
-FALLBACK RESPONSE RULE:
-If the answer cannot be found in the data, reply exactly with:
-"I'm sorry, I don't have the specific details regarding that in my current records. Let me connect you with our Front Desk or Reservations team to assist you further."
-
-For reservation inquiries or live booking details, direct guests to: https://www.astoria.com.ph/`;
+Format: Answer directly. No fluff. No embellishments.`;
 
 const knowledgePrompt = [
-  'Astoria knowledge base:',
-  'FAQs:',
-  ...faqs.map((faq) => `- ${faq.question}\n  ${faq.answer}`),
-  '\nResorts:',
-  ...resorts.map((resort) => `- ${resort.name} (${resort.location})\n  ${resort.description}\n  Amenities: ${resort.amenities.join(', ')}`),
-  '\nServices:',
-  ...services.map((service) => `- ${service.title}\n  ${service.description}`),
+  'KNOWLEDGE BASE - Answer only from this:',
+  '\nFAQS:',
+  ...faqs.map((faq) => `Q: ${faq.question}\nA: ${faq.answer}`),
+  '\nTOURS:',
+  ...tourPackages.map((tour) => `- ${tour.name}: ${tour.pricing.map(p => `${p.pax} = Php ${p.price}`).join(' | ')}`),
+  '\nRESORT:',
+  ...resorts.map((resort) => `- ${resort.name}: ${resort.description}`),
+  '\nSERVICES:',
+  ...services.map((service) => `- ${service.title}: ${service.description}`),
 ].join('\n');
 
 const fullSystemPrompt = `${systemPrompt}\n\n${knowledgePrompt}`;
