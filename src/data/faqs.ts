@@ -112,7 +112,7 @@ export const faqs = [
   {
     id: 'island-tours',
     question: 'What island tours are offered?',
-    answer: 'Puerto Princesa, Honda Bay, city tour, Port Barton, El Nido. Dial "0".'
+    answer: 'Underground River (Php 3,400), Honda Bay (Php 2,400), City Tour (Php 1,430), Port Barton, El Nido (Php 4,740). Dial "0" to book.'
   },
   {
     id: 'domestic-animals',
