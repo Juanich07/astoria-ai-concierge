@@ -1,4 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -25,10 +26,12 @@ const isFirebaseConfigured =
   firebaseConfig.appId.length > 0;
 
 let db: ReturnType<typeof getFirestore> | null = null;
+let auth: ReturnType<typeof getAuth> | null = null;
 
 if (isFirebaseConfigured) {
   const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
   db = getFirestore(app);
+  auth = getAuth(app);
 }
 
-export { db, isFirebaseConfigured };
+export { auth, db, isFirebaseConfigured };
