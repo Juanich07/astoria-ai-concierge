@@ -60,6 +60,11 @@ Required for AI chat:
 
 - `GROQ_API_KEY`
 
+Optional AI fallbacks when Groq is unreachable:
+
+- `OPENAI_API_KEY`
+- `GOOGLE_GENERATIVE_AI_API_KEY`
+
 Required for Firestore save button:
 
 - `NEXT_PUBLIC_FIREBASE_API_KEY`
@@ -69,6 +74,12 @@ Required for Firestore save button:
 - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
 - `NEXT_PUBLIC_FIREBASE_APP_ID`
 - `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` (optional)
+
+Optional for server-side content sync from Firestore in `POST /api/chat`:
+
+- `ENABLE_FIREBASE_CONTENT=true`
+
+If this flag is omitted, the API route uses local data files only and skips Firestore reads.
 
 ## NPM Scripts
 

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" role="img" aria-labelledby="title desc">
+  <title id="title">Astoria Palawan Logo</title>
+  <desc id="desc">Stylized letter A with Astoria Palawan wordmark.</desc>
+  <rect width="480" height="480" fill="#e5e7eb"/>
+  <g fill="#10a89a">
+    <path d="M205 60h62l112 180h-68l-81-132-56 90-43-28z"/>
+    <path d="M132 240 229 83l47 30-51 29-37 59h67l-34 39z"/>
+  </g>
+  <g fill="#f15a11" font-family="Georgia, 'Times New Roman', serif" font-weight="700" text-anchor="middle" letter-spacing="4">
+    <text x="240" y="318" font-size="66">ASTORIA</text>
+    <text x="240" y="390" font-size="72">PALAWAN</text>
+  </g>
+</svg>

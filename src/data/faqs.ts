@@ -132,7 +132,7 @@ export const faqs = [
   {
     id: 'tour-booking',
     question: 'How do I book a tour?',
-    answer: 'Book your tour by:\n- Dial "0" from your room\n- Phone: +639998436299\n- Email: tours@astoriapalawan.com\n- Visit The Canopy Front Office\n\nTours are subject to availability and may have specific requirements.'
+    answer: 'Book your tour by:\n- Dial "0" from your room\n- Phone: (+63) 908-872-7931\n- Email: tours@astoriapalawan.com\n- Visit The Canopy Front Office\n\nFor more info, dial "0". Tours are subject to availability and may have specific requirements.'
   },
   {
     id: 'domestic-animals',

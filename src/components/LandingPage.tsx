@@ -66,15 +66,22 @@ export default function LandingPage() {
       </div>
 
       <div className="relative z-10 flex flex-col gap-2 pb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:pb-8">
-        <div className="text-[10px] font-medium uppercase tracking-[0.24em] text-emerald-100/80 sm:text-sm">
-          {content.badgeTitle}
+        <div className="flex items-center gap-2">
+          <img
+            src="/icons/astoria-logo.svg"
+            alt="Astoria Palawan logo"
+            className="h-10 w-10 rounded-md border border-emerald-100/25 bg-white/80 object-cover sm:h-12 sm:w-12"
+          />
+          <div className="text-[10px] font-medium uppercase tracking-[0.24em] text-emerald-100/80 sm:text-sm">
+            {content.badgeTitle}
+          </div>
         </div>
         <div className="text-[10px] text-emerald-50/70 sm:text-sm sm:text-right">
           {content.helperText}
         </div>
       </div>
 
-      <section className="relative z-10 mx-auto max-w-3xl space-y-3">
+      <section className="relative z-10 mx-auto flex min-h-[calc(100vh-11rem)] max-w-3xl flex-col justify-center space-y-3 sm:min-h-0 sm:justify-start">
         <div className="space-y-2">
           <p className="text-[10px] font-medium uppercase tracking-[0.32em] text-emerald-200/85">
             {content.eyebrow}
@@ -84,8 +91,8 @@ export default function LandingPage() {
           </h1>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:gap-4">
-          <div className="row-span-2 min-h-[150px] rounded-[24px] border border-white/15 bg-white/8 p-2.5 shadow-[0_18px_40px_rgba(0,0,0,0.24)] backdrop-blur sm:min-h-[160px]">
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:mt-0 sm:gap-4">
+          <div className="row-span-2 self-start rounded-[24px] border border-white/15 bg-white/8 p-2.5 shadow-[0_18px_40px_rgba(0,0,0,0.24)] backdrop-blur sm:min-h-[160px] sm:self-stretch">
             <p className="px-1 text-[10px] font-medium uppercase tracking-[0.24em] text-emerald-50/75">
               {content.carouselLabel}
             </p>

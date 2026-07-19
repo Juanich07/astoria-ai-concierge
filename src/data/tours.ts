@@ -121,7 +121,7 @@ export const sharedGroupTours = [
 ];
 
 export const tourContact = {
-  phone: '+639998436299',
+  phone: '(+63) 908-872-7931',
   email: 'tours@astoriapalawan.com',
   note: 'You can also dial "0" from your room to reach the Front Desk for tour bookings.'
 };

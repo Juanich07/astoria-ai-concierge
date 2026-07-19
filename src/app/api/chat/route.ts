@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { streamText } from 'ai';
 import { groq } from '@ai-sdk/groq';
+import { openai } from '@ai-sdk/openai';
+import { google } from '@ai-sdk/google';
 import { doc, getDoc } from 'firebase/firestore/lite';
 import { faqs } from '@/data/faqs';
 import { resorts } from '@/data/resorts';
@@ -39,15 +41,22 @@ type KnowledgeData = {
 };
 
 const KNOWLEDGE_CACHE_TTL_MS = 60_000;
+const GROQ_CONNECTIVITY_TTL_MS = 30_000;
+const FIREBASE_CONTENT_ENABLED = process.env.ENABLE_FIREBASE_CONTENT === 'true';
+
+type ConnectivityCache = {
+  reachable: boolean;
+  checkedAt: number;
+};
 
 type CachedKnowledge = {
   knowledge: KnowledgeData;
-  knowledgePrompt: string;
   expiresAt: number;
 };
 
 let cachedKnowledge: CachedKnowledge | null = null;
 let inFlightKnowledgeLoad: Promise<CachedKnowledge> | null = null;
+let cachedGroqConnectivity: ConnectivityCache | null = null;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -63,8 +72,61 @@ const parseIntentSections = (value: unknown): Record<string, string> | null => {
   return entries.length ? Object.fromEntries(entries) : null;
 };
 
+const toTokens = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length > 2);
+
+const scoreByTokenOverlap = (query: string, target: string) => {
+  const queryTokens = new Set(toTokens(query));
+  if (!queryTokens.size) return 0;
+
+  const targetTokens = new Set(toTokens(target));
+  let score = 0;
+  for (const token of queryTokens) {
+    if (targetTokens.has(token)) score += 1;
+  }
+  return score;
+};
+
+const pickTopMatches = <T,>(items: T[], query: string, toText: (item: T) => string, limit: number): T[] => {
+  if (!query.trim()) return items.slice(0, limit);
+
+  const ranked = items
+    .map((item) => ({ item, score: scoreByTokenOverlap(query, toText(item)) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((entry) => entry.item);
+
+  return ranked.length ? ranked : items.slice(0, limit);
+};
+
+const detectRelevantIntents = (query: string, intentSections: Record<string, string>) => {
+  const lowered = query.toLowerCase();
+  const intentKeywords: Record<string, string[]> = {
+    dining: ['dining', 'food', 'restaurant', 'reserve', 'habitat', 'cafe', 'pickup', 'delivery', 'menu'],
+    accommodations: ['room', 'suite', 'villa', 'accommodation', 'check-in', 'check in', 'check-out', 'bed'],
+    waterpark: ['waterpark', 'slide', 'pool', 'rate', 'ticket', 'surf', 'river ride', 'bucket'],
+    amenities: ['amenity', 'spa', 'gym', 'pod', 'pool', 'flash mart', 'store', 'fitness'],
+    meetingsAndEvents: ['event', 'meeting', 'conference', 'wedding', 'proposal', 'mice', 'venue', 'capacity'],
+    aboutAndLocation: ['about', 'location', 'address', 'sustainable', 'ethos', 'palawan'],
+    transport: ['transfer', 'airport', 'seaport', 'bus', 'taxi', 'van', 'how to get there'],
+  };
+
+  const matched = Object.keys(intentSections).filter((intent) => {
+    const keywords = intentKeywords[intent] ?? [];
+    return keywords.some((keyword) => lowered.includes(keyword));
+  });
+
+  if (matched.length) return matched.slice(0, 2);
+  return Object.keys(intentSections).slice(0, 1);
+};
+
 const readDocData = async (collectionName: string, docId: string): Promise<Record<string, unknown> | null> => {
-  if (!serverDb || !isFirebaseServerConfigured) return null;
+  if (!FIREBASE_CONTENT_ENABLED || !serverDb || !isFirebaseServerConfigured) return null;
 
   try {
     const snapshot = await getDoc(doc(serverDb, collectionName, docId));
@@ -76,13 +138,65 @@ const readDocData = async (collectionName: string, docId: string): Promise<Recor
   }
 };
 
-const buildKnowledgePrompt = (data: KnowledgeData) =>
-  [
+const isGroqReachable = async (): Promise<boolean> => {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return false;
+
+  const now = Date.now();
+  if (cachedGroqConnectivity && now - cachedGroqConnectivity.checkedAt < GROQ_CONNECTIVITY_TTL_MS) {
+    return cachedGroqConnectivity.reachable;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2_500);
+
+    const response = await fetch('https://api.groq.com/openai/v1/models', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    const reachable = response.ok || response.status === 401 || response.status === 403;
+    cachedGroqConnectivity = { reachable, checkedAt: now };
+    return reachable;
+  } catch {
+    cachedGroqConnectivity = { reachable: false, checkedAt: now };
+    return false;
+  }
+};
+
+const resolveModel = async () => {
+  if (await isGroqReachable()) {
+    return groq('llama-3.1-8b-instant');
+  }
+
+  if (process.env.OPENAI_API_KEY) {
+    return openai('gpt-4o-mini');
+  }
+
+  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    return google('gemini-1.5-flash');
+  }
+
+  return null;
+};
+
+const buildKnowledgePrompt = (data: KnowledgeData, query: string) => {
+  const selectedFaqs = pickTopMatches(data.faqs, query, (faq) => `${faq.question} ${faq.answer}`, 10);
+  const selectedTours = pickTopMatches(data.tourPackages, query, (tour) => tour.name, 4);
+  const selectedServices = pickTopMatches(data.services, query, (service) => `${service.title} ${service.description}`, 6);
+  const selectedIntents = detectRelevantIntents(query, data.intentSections);
+
+  return [
     'KNOWLEDGE BASE - Answer only from this:',
-    '\nFAQS:',
-    ...data.faqs.map((faq) => `Q: ${faq.question}\nA: ${faq.answer}`),
-    '\nTOURS:',
-    ...data.tourPackages.map((tour) =>
+    '\nFAQS (most relevant):',
+    ...selectedFaqs.map((faq) => `Q: ${faq.question}\nA: ${faq.answer}`),
+    '\nTOURS (most relevant):',
+    ...selectedTours.map((tour) =>
       `- ${tour.name}: ${tour.pricing.map((p) => `${p.pax} = Php ${p.price}`).join(' | ')}`
     ),
     '\nTOUR CONTACT:',
@@ -91,11 +205,15 @@ const buildKnowledgePrompt = (data: KnowledgeData) =>
     `${data.tourContact.note}`,
     '\nRESORT:',
     ...data.resorts.map((resort) => `- ${resort.name}: ${resort.description}`),
-    '\nSERVICES:',
-    ...data.services.map((service) => `- ${service.title}: ${service.description}`),
-    '\nINTENT KNOWLEDGE SECTIONS:',
-    ...Object.entries(data.intentSections).flatMap(([intent, content]) => [`\n[INTENT: ${intent}]`, content]),
+    '\nSERVICES (most relevant):',
+    ...selectedServices.map((service) => `- ${service.title}: ${service.description}`),
+    '\nINTENT KNOWLEDGE SECTIONS (most relevant):',
+    ...selectedIntents.flatMap((intent) => {
+      const content = data.intentSections[intent] ?? '';
+      return content ? [`\n[INTENT: ${intent}]`, content] : [];
+    }),
   ].join('\n');
+};
 
 const loadKnowledgeData = async (): Promise<KnowledgeData> => {
   const fallback: KnowledgeData = {
@@ -192,7 +310,6 @@ const getCachedKnowledge = async (): Promise<CachedKnowledge> => {
       const knowledge = await loadKnowledgeData();
       const nextCache: CachedKnowledge = {
         knowledge,
-        knowledgePrompt: buildKnowledgePrompt(knowledge),
         expiresAt: Date.now() + KNOWLEDGE_CACHE_TTL_MS,
       };
 
@@ -208,8 +325,28 @@ const getCachedKnowledge = async (): Promise<CachedKnowledge> => {
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
+
+  if (isObject(body) && body.action === 'refreshKnowledge') {
+    cachedKnowledge = null;
+    inFlightKnowledgeLoad = null;
+    await getCachedKnowledge();
+
+    return Response.json({ ok: true, refreshedAt: Date.now() });
+  }
+
   const messages = Array.isArray(body.messages) ? body.messages : [];
-  const { knowledgePrompt } = await getCachedKnowledge();
+  const { knowledge } = await getCachedKnowledge();
+  const model = await resolveModel();
+
+  if (!model) {
+    return Response.json(
+      {
+        error:
+          'No reachable AI provider is configured. Add GROQ_API_KEY or a fallback (OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY).',
+      },
+      { status: 503 }
+    );
+  }
 
   const coreMessages = messages
     .map((msg: { role?: string; content?: string; parts?: Array<{ type: string; text?: string }> }) => {
@@ -228,11 +365,17 @@ export async function POST(request: NextRequest) {
     })
     .filter((m: { role: string; content: string }) => m.content);
 
+  const latestUserMessage = [...coreMessages].reverse().find((message) => message.role === 'user')?.content ?? '';
+  const knowledgePrompt = buildKnowledgePrompt(knowledge, latestUserMessage);
+
   const result = streamText({
-    model: groq('llama-3.1-8b-instant'),
+    model,
     system: `${systemPrompt}\n\n${knowledgePrompt}`,
     messages: coreMessages,
   });
 
-  return result.toUIMessageStreamResponse();
+  return result.toUIMessageStreamResponse({
+    onError: () =>
+      "I'm having trouble connecting to our AI service right now. Please dial 0 for Front Desk.",
+  });
 }

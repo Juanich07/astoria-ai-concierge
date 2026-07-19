@@ -14,8 +14,17 @@ import { tourPackages, sharedGroupTours, tourContact } from '@/data/tours';
 import { intentKnowledgeSections, extendedKnowledge } from '@/data/extendedKnowledge';
 import { auth, db, isFirebaseConfigured } from '@/lib/firebase';
 
-type SectionId = 'overview' | 'carousel' | 'news' | 'data' | 'profile';
+type SectionId = 'overview' | 'carousel' | 'news' | 'data' | 'collections' | 'profile';
 type TextFieldKey = Exclude<keyof LandingPageContent, 'imageSlides' | 'newsSlides'>;
+type EditableDataKey =
+  | 'faqs'
+  | 'resorts'
+  | 'services'
+  | 'suggestedQuestions'
+  | 'testimonials'
+  | 'tours'
+  | 'chatResponses'
+  | 'knowledge';
 
 type AdminProfile = {
   displayName: string;
@@ -31,8 +40,190 @@ const sections: Array<{ id: SectionId; label: string; hint: string }> = [
   { id: 'carousel', label: 'Edit Carousel', hint: 'Add and update slides' },
   { id: 'news', label: 'Edit News', hint: 'Manage news cards' },
   { id: 'data', label: 'Add / Remove Data', hint: 'Search and edit everything' },
+  { id: 'collections', label: 'Data Files', hint: 'Edit resorts, faqs, tours, and more' },
   { id: 'profile', label: 'Admin Profile', hint: 'Picture, name, ID' },
 ];
+
+const dataCollectionLabels: Record<EditableDataKey, string> = {
+  faqs: 'FAQs',
+  resorts: 'Resorts',
+  services: 'Services',
+  suggestedQuestions: 'Suggested Questions',
+  testimonials: 'Testimonials',
+  tours: 'Tours',
+  chatResponses: 'Chat Responses',
+  knowledge: 'Knowledge Sections',
+};
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const toPrettyJson = (value: unknown) => JSON.stringify(value, null, 2);
+
+const buildDefaultPayload = (key: EditableDataKey) => {
+  switch (key) {
+    case 'faqs':
+      return faqs;
+    case 'resorts':
+      return resorts;
+    case 'services':
+      return services;
+    case 'suggestedQuestions':
+      return suggestedQuestions;
+    case 'testimonials':
+      return testimonials;
+    case 'tours':
+      return {
+        packages: tourPackages,
+        sharedGroupTours,
+        contact: tourContact,
+      };
+    case 'chatResponses':
+      return chatResponses;
+    case 'knowledge':
+      return {
+        intentSections: intentKnowledgeSections,
+        fullText: extendedKnowledge,
+      };
+    default:
+      return {};
+  }
+};
+
+const getCollectionRef = (key: EditableDataKey) => {
+  if (key === 'chatResponses' || key === 'knowledge') {
+    return { collectionName: 'siteContent', docId: key };
+  }
+
+  return { collectionName: 'contentData', docId: key };
+};
+
+const getPayloadFromSnapshot = (key: EditableDataKey, raw: Record<string, unknown> | null) => {
+  if (!raw) return buildDefaultPayload(key);
+
+  switch (key) {
+    case 'faqs':
+    case 'resorts':
+    case 'services':
+    case 'suggestedQuestions':
+    case 'testimonials':
+      return Array.isArray(raw.items) ? raw.items : buildDefaultPayload(key);
+    case 'tours':
+      return {
+        packages: Array.isArray(raw.packages) ? raw.packages : tourPackages,
+        sharedGroupTours: Array.isArray(raw.sharedGroupTours) ? raw.sharedGroupTours : sharedGroupTours,
+        contact: isObject(raw.contact) ? raw.contact : tourContact,
+      };
+    case 'chatResponses': {
+      const defaults = chatResponses;
+      const merged: Record<string, string> = {};
+
+      for (const responseKey of Object.keys(defaults)) {
+        const value = raw[responseKey];
+        merged[responseKey] = typeof value === 'string' ? value : defaults[responseKey as keyof typeof defaults];
+      }
+
+      return merged;
+    }
+    case 'knowledge': {
+      const intentSections = isObject(raw.intentSections) ? raw.intentSections : intentKnowledgeSections;
+      const normalizedIntentSections = Object.entries(intentSections).reduce<Record<string, string>>((acc, [intent, text]) => {
+        if (typeof text === 'string' && text.trim().length > 0) {
+          acc[intent] = text;
+        }
+        return acc;
+      }, {});
+
+      return {
+        intentSections:
+          Object.keys(normalizedIntentSections).length > 0 ? normalizedIntentSections : intentKnowledgeSections,
+        fullText:
+          typeof raw.fullText === 'string' && raw.fullText.length > 0
+            ? raw.fullText
+            : extendedKnowledge,
+      };
+    }
+    default:
+      return buildDefaultPayload(key);
+  }
+};
+
+const validateParsedPayload = (key: EditableDataKey, payload: unknown): string | null => {
+  switch (key) {
+    case 'faqs':
+    case 'resorts':
+    case 'services':
+    case 'suggestedQuestions':
+    case 'testimonials':
+      return Array.isArray(payload) ? null : 'Expected a JSON array for this data file.';
+    case 'tours':
+      if (!isObject(payload)) return 'Expected a JSON object with packages, sharedGroupTours, and contact.';
+      if (!Array.isArray(payload.packages)) return 'The tours payload must include an array field named packages.';
+      if (!Array.isArray(payload.sharedGroupTours)) {
+        return 'The tours payload must include an array field named sharedGroupTours.';
+      }
+      if (!isObject(payload.contact)) return 'The tours payload must include an object field named contact.';
+      return null;
+    case 'chatResponses':
+      return isObject(payload) ? null : 'Expected a JSON object for chat responses.';
+    case 'knowledge':
+      if (!isObject(payload)) return 'Expected a JSON object with intentSections and fullText.';
+      if (!isObject(payload.intentSections)) return 'The knowledge payload must include an object field named intentSections.';
+      return null;
+    default:
+      return 'Unsupported data file type.';
+  }
+};
+
+const buildSavePayload = (key: EditableDataKey, payload: unknown, uid: string) => {
+  const baseMeta = {
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  };
+
+  switch (key) {
+    case 'faqs':
+    case 'resorts':
+    case 'services':
+    case 'suggestedQuestions':
+    case 'testimonials':
+      return {
+        items: payload,
+        ...baseMeta,
+      };
+    case 'tours': {
+      const typedPayload = payload as {
+        packages: unknown[];
+        sharedGroupTours: unknown[];
+        contact: Record<string, unknown>;
+      };
+
+      return {
+        packages: typedPayload.packages,
+        sharedGroupTours: typedPayload.sharedGroupTours,
+        contact: typedPayload.contact,
+        ...baseMeta,
+      };
+    }
+    case 'chatResponses':
+      return {
+        ...(payload as Record<string, unknown>),
+        ...baseMeta,
+      };
+    case 'knowledge': {
+      const typedPayload = payload as { intentSections: Record<string, unknown>; fullText?: string };
+      return {
+        intentSections: typedPayload.intentSections,
+        fullText: typeof typedPayload.fullText === 'string' ? typedPayload.fullText : extendedKnowledge,
+        ...baseMeta,
+      };
+    }
+    default:
+      return {
+        ...baseMeta,
+      };
+  }
+};
 
 const textFields: Array<{ key: TextFieldKey; label: string; placeholder: string }> = [
   { key: 'badgeTitle', label: 'Badge title', placeholder: 'Astoria Palawan Assistant' },
@@ -60,6 +251,12 @@ export default function AdminPage() {
   const [form, setForm] = useState<LandingPageContent>(defaultLandingContent);
   const [activeSection, setActiveSection] = useState<SectionId>('overview');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDataKey, setSelectedDataKey] = useState<EditableDataKey>('resorts');
+  const [dataJson, setDataJson] = useState('');
+  const [dataStatus, setDataStatus] = useState('');
+  const [isDataLoading, setIsDataLoading] = useState(false);
+  const [isDataSaving, setIsDataSaving] = useState(false);
+  const [isRefreshingKnowledge, setIsRefreshingKnowledge] = useState(false);
   const [sessionEdits, setSessionEdits] = useState(0);
   const [noSignupUsers, setNoSignupUsers] = useState(0);
   const [now, setNow] = useState(() => new Date());
@@ -139,6 +336,121 @@ export default function AdminPage() {
     window.localStorage.setItem(storageKey, String(next));
     setNoSignupUsers(next);
   }, [canRenderForm]);
+
+  const loadCollectionJson = async (key: EditableDataKey) => {
+    if (!db || !user || !isAdmin) return;
+
+    try {
+      setIsDataLoading(true);
+      setDataStatus('');
+
+      const ref = getCollectionRef(key);
+      const snapshot = await getDoc(doc(db, ref.collectionName, ref.docId));
+      const raw = snapshot.exists() && isObject(snapshot.data()) ? snapshot.data() : null;
+      const payload = getPayloadFromSnapshot(key, raw);
+      setDataJson(toPrettyJson(payload));
+      setDataStatus(`${dataCollectionLabels[key]} loaded.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Loading data failed.';
+      setDataStatus(message);
+    } finally {
+      setIsDataLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!canRenderForm) return;
+    void loadCollectionJson(selectedDataKey);
+  }, [canRenderForm, selectedDataKey]);
+
+  const saveCollectionJson = async () => {
+    if (!db || !user || !isAdmin) return;
+
+    try {
+      setIsDataSaving(true);
+      setDataStatus('');
+
+      const parsed = JSON.parse(dataJson) as unknown;
+      const validationError = validateParsedPayload(selectedDataKey, parsed);
+
+      if (validationError) {
+        setDataStatus(validationError);
+        return;
+      }
+
+      const ref = getCollectionRef(selectedDataKey);
+      const payload = buildSavePayload(selectedDataKey, parsed, user.uid);
+
+      await setDoc(doc(db, ref.collectionName, ref.docId), payload, { merge: true });
+      setDataStatus(`${dataCollectionLabels[selectedDataKey]} saved successfully.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Saving data failed.';
+      setDataStatus(message);
+    } finally {
+      setIsDataSaving(false);
+    }
+  };
+
+  const resetCollectionJson = () => {
+    const defaults = buildDefaultPayload(selectedDataKey);
+    setDataJson(toPrettyJson(defaults));
+    setDataStatus(`${dataCollectionLabels[selectedDataKey]} reset to code defaults in editor.`);
+  };
+
+  const parsedCollection = useMemo(() => {
+    try {
+      return dataJson.trim().length ? JSON.parse(dataJson) : null;
+    } catch {
+      return null;
+    }
+  }, [dataJson]);
+
+  const useStructuredEditor = selectedDataKey === 'faqs' || selectedDataKey === 'resorts' || selectedDataKey === 'services';
+  const collectionHasInvalidJson = dataJson.trim().length > 0 && parsedCollection === null;
+
+  const updateArrayCollection = (
+    expectedKey: 'faqs' | 'resorts' | 'services',
+    updater: (items: Array<Record<string, unknown>>) => Array<Record<string, unknown>>,
+    successMessage: string
+  ) => {
+    if (selectedDataKey !== expectedKey) return;
+    if (!Array.isArray(parsedCollection)) {
+      setDataStatus('Please fix JSON first before using form editing.');
+      return;
+    }
+
+    const normalizedItems = parsedCollection.filter(isObject).map((item) => ({ ...item }));
+    const nextItems = updater(normalizedItems);
+    setDataJson(toPrettyJson(nextItems));
+    setDataStatus(successMessage);
+    setSessionEdits((count) => count + 1);
+  };
+
+  const refreshKnowledgeNow = async () => {
+    try {
+      setIsRefreshingKnowledge(true);
+      setDataStatus('Refreshing chatbot knowledge...');
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'refreshKnowledge' }),
+      });
+
+      if (!response.ok) {
+        const fallback = await response.text();
+        setDataStatus(fallback || 'Knowledge refresh failed.');
+        return;
+      }
+
+      setDataStatus('Chatbot knowledge refreshed successfully.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Knowledge refresh failed.';
+      setDataStatus(message);
+    } finally {
+      setIsRefreshingKnowledge(false);
+    }
+  };
 
   const login = async (event: FormEvent) => {
     event.preventDefault();
@@ -460,7 +772,14 @@ export default function AdminPage() {
       <div className="mx-auto max-w-7xl">
         {!user ? (
           <section className="mx-auto mt-10 w-full max-w-md rounded-3xl border border-cyan-200/30 bg-[#0f2255]/75 p-6 shadow-2xl backdrop-blur">
-            <h1 className="text-2xl font-semibold">Astoria Admin Login</h1>
+            <div className="flex items-center gap-3">
+              <img
+                src="/icons/astoria-logo.svg"
+                alt="Astoria Palawan logo"
+                className="h-12 w-12 rounded-md border border-cyan-200/30 bg-white/80 object-cover"
+              />
+              <h1 className="text-2xl font-semibold">Astoria Admin Login</h1>
+            </div>
             <p className="mt-2 text-sm text-cyan-100/80">Sign in to manage carousel, news, and dashboard data.</p>
             <form onSubmit={login} className="mt-5 space-y-3">
               <input
@@ -512,8 +831,17 @@ export default function AdminPage() {
           <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
             <aside className="rounded-3xl border border-cyan-200/25 bg-[#0f2255]/75 p-3 backdrop-blur">
               <div className="rounded-2xl border border-cyan-200/20 bg-[#132d68]/60 p-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-cyan-100/70">Astoria Admin</p>
-                <p className="mt-1 text-sm text-cyan-50/90">{user.email ?? 'Signed in admin'}</p>
+                <div className="flex items-center gap-2">
+                  <img
+                    src="/icons/astoria-logo.svg"
+                    alt="Astoria Palawan logo"
+                    className="h-10 w-10 rounded-md border border-cyan-200/30 bg-white/80 object-cover"
+                  />
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-100/70">Astoria Admin</p>
+                    <p className="mt-1 text-sm text-cyan-50/90">{user.email ?? 'Signed in admin'}</p>
+                  </div>
+                </div>
               </div>
 
               <nav className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
@@ -868,6 +1196,407 @@ export default function AdminPage() {
                       No data found for your search.
                     </p>
                   ) : null}
+                </div>
+              ) : null}
+
+              {activeSection === 'collections' ? (
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-2xl border border-cyan-200/20 bg-[#122b63]/65 p-3">
+                    <h2 className="text-lg font-semibold">Data Files Manager</h2>
+                    <p className="mt-1 text-xs text-cyan-100/80">
+                      Edit content data directly as JSON, then save to Firebase without redeploying code.
+                    </p>
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      {(Object.keys(dataCollectionLabels) as EditableDataKey[]).map((key) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setSelectedDataKey(key)}
+                          className={`rounded-xl border px-3 py-2 text-left text-xs transition ${
+                            selectedDataKey === key
+                              ? 'border-cyan-300/70 bg-cyan-300/20 text-white'
+                              : 'border-cyan-200/20 bg-[#0d2862]/60 text-cyan-100/85 hover:border-cyan-200/45'
+                          }`}
+                        >
+                          {dataCollectionLabels[key]}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void loadCollectionJson(selectedDataKey)}
+                        disabled={isDataLoading}
+                        className="rounded-xl border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-2 text-xs text-cyan-100 disabled:opacity-70"
+                      >
+                        {isDataLoading ? 'Loading...' : 'Reload from Firebase'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={saveCollectionJson}
+                        disabled={isDataSaving}
+                        className="rounded-xl bg-cyan-400 px-3 py-2 text-xs font-semibold text-[#04204e] transition hover:bg-cyan-300 disabled:opacity-70"
+                      >
+                        {isDataSaving ? 'Saving...' : 'Save JSON'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetCollectionJson}
+                        className="rounded-xl border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-2 text-xs text-cyan-100"
+                      >
+                        Reset to code defaults
+                      </button>
+                      <button
+                        type="button"
+                        onClick={refreshKnowledgeNow}
+                        disabled={isRefreshingKnowledge}
+                        className="rounded-xl border border-emerald-200/35 bg-[#0f3b3a]/80 px-3 py-2 text-xs text-emerald-100 disabled:opacity-70"
+                      >
+                        {isRefreshingKnowledge ? 'Refreshing bot...' : 'Refresh chatbot knowledge now'}
+                      </button>
+                    </div>
+
+                    {useStructuredEditor ? (
+                      <div className="mt-3 rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-xs text-cyan-100/70">
+                            Form editor for {dataCollectionLabels[selectedDataKey]} (auto-syncs to JSON below)
+                          </p>
+                          {selectedDataKey === 'faqs' ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateArrayCollection('faqs', (items) => [
+                                  ...items,
+                                  {
+                                    id: `faq-${Date.now()}`,
+                                    question: 'New question',
+                                    answer: 'New answer',
+                                  },
+                                ], 'FAQ item added.')
+                              }
+                              className="rounded-lg border border-cyan-200/35 px-2 py-1 text-[11px] text-cyan-100"
+                            >
+                              Add FAQ
+                            </button>
+                          ) : null}
+                          {selectedDataKey === 'resorts' ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateArrayCollection('resorts', (items) => [
+                                  ...items,
+                                  {
+                                    id: `resort-${Date.now()}`,
+                                    name: 'New resort',
+                                    location: 'Location',
+                                    description: 'Description',
+                                    amenities: [],
+                                    image: '/images/resort-palawan.jpg',
+                                  },
+                                ], 'Resort item added.')
+                              }
+                              className="rounded-lg border border-cyan-200/35 px-2 py-1 text-[11px] text-cyan-100"
+                            >
+                              Add Resort
+                            </button>
+                          ) : null}
+                          {selectedDataKey === 'services' ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateArrayCollection('services', (items) => [
+                                  ...items,
+                                  {
+                                    id: `service-${Date.now()}`,
+                                    title: 'New service',
+                                    description: 'Service description',
+                                    icon: 'Sparkles',
+                                  },
+                                ], 'Service item added.')
+                              }
+                              className="rounded-lg border border-cyan-200/35 px-2 py-1 text-[11px] text-cyan-100"
+                            >
+                              Add Service
+                            </button>
+                          ) : null}
+                        </div>
+
+                        {collectionHasInvalidJson ? (
+                          <p className="rounded-lg border border-rose-300/40 bg-[#3d1f4e]/70 px-2 py-2 text-xs text-rose-100">
+                            JSON is invalid. Please fix JSON first before using form editing.
+                          </p>
+                        ) : null}
+
+                        {selectedDataKey === 'faqs' && Array.isArray(parsedCollection) ? (
+                          <div className="space-y-2">
+                            {parsedCollection.filter(isObject).map((item, index) => (
+                              <article key={`faq-${index}`} className="rounded-xl border border-cyan-200/20 bg-[#102b66]/60 p-2">
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  <input
+                                    className={fieldClassName}
+                                    value={typeof item.id === 'string' ? item.id : ''}
+                                    onChange={(event) =>
+                                      updateArrayCollection('faqs', (items) =>
+                                        items.map((entry, entryIndex) =>
+                                          entryIndex === index ? { ...entry, id: event.target.value } : entry
+                                        )
+                                      , 'FAQ updated.')
+                                    }
+                                    placeholder="FAQ id"
+                                  />
+                                  <input
+                                    className={fieldClassName}
+                                    value={typeof item.question === 'string' ? item.question : ''}
+                                    onChange={(event) =>
+                                      updateArrayCollection('faqs', (items) =>
+                                        items.map((entry, entryIndex) =>
+                                          entryIndex === index ? { ...entry, question: event.target.value } : entry
+                                        )
+                                      , 'FAQ updated.')
+                                    }
+                                    placeholder="Question"
+                                  />
+                                </div>
+                                <textarea
+                                  className={`${fieldClassName} mt-2`}
+                                  rows={3}
+                                  value={typeof item.answer === 'string' ? item.answer : ''}
+                                  onChange={(event) =>
+                                    updateArrayCollection('faqs', (items) =>
+                                      items.map((entry, entryIndex) =>
+                                        entryIndex === index ? { ...entry, answer: event.target.value } : entry
+                                      )
+                                    , 'FAQ updated.')
+                                  }
+                                  placeholder="Answer"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateArrayCollection(
+                                      'faqs',
+                                      (items) => items.filter((_, entryIndex) => entryIndex !== index),
+                                      'FAQ removed.'
+                                    )
+                                  }
+                                  className="mt-2 rounded-lg border border-rose-300/40 px-2 py-1 text-[11px] text-rose-100"
+                                >
+                                  Remove FAQ
+                                </button>
+                              </article>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {selectedDataKey === 'resorts' && Array.isArray(parsedCollection) ? (
+                          <div className="space-y-2">
+                            {parsedCollection.filter(isObject).map((item, index) => {
+                              const amenityLines = Array.isArray(item.amenities)
+                                ? item.amenities.map((amenity) => String(amenity)).join('\n')
+                                : '';
+
+                              return (
+                                <article key={`resort-${index}`} className="rounded-xl border border-cyan-200/20 bg-[#102b66]/60 p-2">
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    <input
+                                      className={fieldClassName}
+                                      value={typeof item.id === 'string' ? item.id : ''}
+                                      onChange={(event) =>
+                                        updateArrayCollection('resorts', (items) =>
+                                          items.map((entry, entryIndex) =>
+                                            entryIndex === index ? { ...entry, id: event.target.value } : entry
+                                          )
+                                        , 'Resort updated.')
+                                      }
+                                      placeholder="Resort id"
+                                    />
+                                    <input
+                                      className={fieldClassName}
+                                      value={typeof item.name === 'string' ? item.name : ''}
+                                      onChange={(event) =>
+                                        updateArrayCollection('resorts', (items) =>
+                                          items.map((entry, entryIndex) =>
+                                            entryIndex === index ? { ...entry, name: event.target.value } : entry
+                                          )
+                                        , 'Resort updated.')
+                                      }
+                                      placeholder="Resort name"
+                                    />
+                                    <input
+                                      className={fieldClassName}
+                                      value={typeof item.location === 'string' ? item.location : ''}
+                                      onChange={(event) =>
+                                        updateArrayCollection('resorts', (items) =>
+                                          items.map((entry, entryIndex) =>
+                                            entryIndex === index ? { ...entry, location: event.target.value } : entry
+                                          )
+                                        , 'Resort updated.')
+                                      }
+                                      placeholder="Location"
+                                    />
+                                    <input
+                                      className={fieldClassName}
+                                      value={typeof item.image === 'string' ? item.image : ''}
+                                      onChange={(event) =>
+                                        updateArrayCollection('resorts', (items) =>
+                                          items.map((entry, entryIndex) =>
+                                            entryIndex === index ? { ...entry, image: event.target.value } : entry
+                                          )
+                                        , 'Resort updated.')
+                                      }
+                                      placeholder="Image path"
+                                    />
+                                  </div>
+                                  <textarea
+                                    className={`${fieldClassName} mt-2`}
+                                    rows={3}
+                                    value={typeof item.description === 'string' ? item.description : ''}
+                                    onChange={(event) =>
+                                      updateArrayCollection('resorts', (items) =>
+                                        items.map((entry, entryIndex) =>
+                                          entryIndex === index ? { ...entry, description: event.target.value } : entry
+                                        )
+                                      , 'Resort updated.')
+                                    }
+                                    placeholder="Description"
+                                  />
+                                  <textarea
+                                    className={`${fieldClassName} mt-2`}
+                                    rows={4}
+                                    value={amenityLines}
+                                    onChange={(event) =>
+                                      updateArrayCollection('resorts', (items) =>
+                                        items.map((entry, entryIndex) =>
+                                          entryIndex === index
+                                            ? {
+                                                ...entry,
+                                                amenities: event.target.value
+                                                  .split('\n')
+                                                  .map((line) => line.trim())
+                                                  .filter((line) => line.length > 0),
+                                              }
+                                            : entry
+                                        )
+                                      , 'Resort updated.')
+                                    }
+                                    placeholder="Amenities (one per line)"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateArrayCollection(
+                                        'resorts',
+                                        (items) => items.filter((_, entryIndex) => entryIndex !== index),
+                                        'Resort removed.'
+                                      )
+                                    }
+                                    className="mt-2 rounded-lg border border-rose-300/40 px-2 py-1 text-[11px] text-rose-100"
+                                  >
+                                    Remove Resort
+                                  </button>
+                                </article>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+
+                        {selectedDataKey === 'services' && Array.isArray(parsedCollection) ? (
+                          <div className="space-y-2">
+                            {parsedCollection.filter(isObject).map((item, index) => (
+                              <article key={`service-${index}`} className="rounded-xl border border-cyan-200/20 bg-[#102b66]/60 p-2">
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  <input
+                                    className={fieldClassName}
+                                    value={typeof item.id === 'string' ? item.id : ''}
+                                    onChange={(event) =>
+                                      updateArrayCollection('services', (items) =>
+                                        items.map((entry, entryIndex) =>
+                                          entryIndex === index ? { ...entry, id: event.target.value } : entry
+                                        )
+                                      , 'Service updated.')
+                                    }
+                                    placeholder="Service id"
+                                  />
+                                  <input
+                                    className={fieldClassName}
+                                    value={typeof item.title === 'string' ? item.title : ''}
+                                    onChange={(event) =>
+                                      updateArrayCollection('services', (items) =>
+                                        items.map((entry, entryIndex) =>
+                                          entryIndex === index ? { ...entry, title: event.target.value } : entry
+                                        )
+                                      , 'Service updated.')
+                                    }
+                                    placeholder="Service title"
+                                  />
+                                  <input
+                                    className={fieldClassName}
+                                    value={typeof item.icon === 'string' ? item.icon : ''}
+                                    onChange={(event) =>
+                                      updateArrayCollection('services', (items) =>
+                                        items.map((entry, entryIndex) =>
+                                          entryIndex === index ? { ...entry, icon: event.target.value } : entry
+                                        )
+                                      , 'Service updated.')
+                                    }
+                                    placeholder="Icon name"
+                                  />
+                                </div>
+                                <textarea
+                                  className={`${fieldClassName} mt-2`}
+                                  rows={3}
+                                  value={typeof item.description === 'string' ? item.description : ''}
+                                  onChange={(event) =>
+                                    updateArrayCollection('services', (items) =>
+                                      items.map((entry, entryIndex) =>
+                                        entryIndex === index ? { ...entry, description: event.target.value } : entry
+                                      )
+                                    , 'Service updated.')
+                                  }
+                                  placeholder="Service description"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateArrayCollection(
+                                      'services',
+                                      (items) => items.filter((_, entryIndex) => entryIndex !== index),
+                                      'Service removed.'
+                                    )
+                                  }
+                                  className="mt-2 rounded-lg border border-rose-300/40 px-2 py-1 text-[11px] text-rose-100"
+                                >
+                                  Remove Service
+                                </button>
+                              </article>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-3 rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-2">
+                      <p className="mb-2 text-xs text-cyan-100/70">
+                        Editing: {dataCollectionLabels[selectedDataKey]}
+                      </p>
+                      <textarea
+                        className={`${fieldClassName} min-h-[380px] font-mono text-xs`}
+                        value={dataJson}
+                        onChange={(event) => setDataJson(event.target.value)}
+                        placeholder="JSON data will appear here..."
+                        spellCheck={false}
+                      />
+                    </div>
+
+                    {dataStatus ? (
+                      <p className="mt-3 rounded-xl border border-cyan-200/30 bg-[#152f6c]/70 px-3 py-2 text-xs text-cyan-100/90">
+                        {dataStatus}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
 
