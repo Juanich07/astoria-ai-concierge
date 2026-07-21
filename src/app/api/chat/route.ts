@@ -40,8 +40,13 @@ type KnowledgeData = {
   intentSections: Record<string, string>;
 };
 
+type ContentMode = 'auto' | 'firebase' | 'local';
+
 const KNOWLEDGE_CACHE_TTL_MS = 60_000;
 const GROQ_CONNECTIVITY_TTL_MS = 30_000;
+const FIREBASE_FETCH_TIMEOUT_MS = 2_000;
+const FIREBASE_FAILURE_BACKOFF_MS = 60_000;
+const CONTENT_MODE_CACHE_TTL_MS = 30_000;
 const FIREBASE_CONTENT_ENABLED = process.env.ENABLE_FIREBASE_CONTENT === 'true';
 
 type ConnectivityCache = {
@@ -52,11 +57,48 @@ type ConnectivityCache = {
 type CachedKnowledge = {
   knowledge: KnowledgeData;
   expiresAt: number;
+  mode: ContentMode;
+};
+
+type ModeCache = {
+  mode: ContentMode;
+  expiresAt: number;
+};
+
+type FirebaseHealthState = {
+  status: 'unknown' | 'healthy' | 'unhealthy' | 'skipped';
+  lastCheckedAt: number | null;
+  lastSuccessAt: number | null;
+  lastFailureAt: number | null;
 };
 
 let cachedKnowledge: CachedKnowledge | null = null;
 let inFlightKnowledgeLoad: Promise<CachedKnowledge> | null = null;
 let cachedGroqConnectivity: ConnectivityCache | null = null;
+let firebaseRetryAt = 0;
+let manualContentMode: ContentMode = 'auto';
+let cachedModeFromDb: ModeCache | null = null;
+let firebaseHealth: FirebaseHealthState = {
+  status: 'unknown',
+  lastCheckedAt: null,
+  lastSuccessAt: null,
+  lastFailureAt: null,
+};
+
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('firebase-timeout')), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -70,6 +112,49 @@ const parseIntentSections = (value: unknown): Record<string, string> | null => {
     .filter(([, content]) => content.length > 0);
 
   return entries.length ? Object.fromEntries(entries) : null;
+};
+
+const normalizeMode = (value: unknown): ContentMode => {
+  if (value === 'firebase' || value === 'local' || value === 'auto') return value;
+  return 'auto';
+};
+
+const updateFirebaseHealth = (status: FirebaseHealthState['status']) => {
+  const now = Date.now();
+  firebaseHealth = {
+    ...firebaseHealth,
+    status,
+    lastCheckedAt: now,
+    lastSuccessAt: status === 'healthy' ? now : firebaseHealth.lastSuccessAt,
+    lastFailureAt: status === 'unhealthy' ? now : firebaseHealth.lastFailureAt,
+  };
+};
+
+const getEffectiveMode = async (): Promise<ContentMode> => {
+  if (manualContentMode !== 'auto') return manualContentMode;
+  if (!FIREBASE_CONTENT_ENABLED || !serverDb || !isFirebaseServerConfigured) return 'local';
+
+  const now = Date.now();
+  if (cachedModeFromDb && cachedModeFromDb.expiresAt > now) {
+    return cachedModeFromDb.mode;
+  }
+
+  try {
+    const settingsSnap = await withTimeout(getDoc(doc(serverDb, 'siteContent', 'settings')), FIREBASE_FETCH_TIMEOUT_MS);
+    const raw = settingsSnap.exists() && isObject(settingsSnap.data()) ? settingsSnap.data() : null;
+    const fromDb = normalizeMode(raw?.contentMode);
+    cachedModeFromDb = {
+      mode: fromDb,
+      expiresAt: Date.now() + CONTENT_MODE_CACHE_TTL_MS,
+    };
+    return fromDb;
+  } catch {
+    cachedModeFromDb = {
+      mode: 'auto',
+      expiresAt: Date.now() + CONTENT_MODE_CACHE_TTL_MS,
+    };
+    return 'auto';
+  }
 };
 
 const toTokens = (value: string) =>
@@ -125,15 +210,39 @@ const detectRelevantIntents = (query: string, intentSections: Record<string, str
   return Object.keys(intentSections).slice(0, 1);
 };
 
-const readDocData = async (collectionName: string, docId: string): Promise<Record<string, unknown> | null> => {
-  if (!FIREBASE_CONTENT_ENABLED || !serverDb || !isFirebaseServerConfigured) return null;
+const readDocData = async (
+  collectionName: string,
+  docId: string,
+  mode: ContentMode
+): Promise<Record<string, unknown> | null> => {
+  if (mode === 'local') {
+    updateFirebaseHealth('skipped');
+    return null;
+  }
+
+  if (!FIREBASE_CONTENT_ENABLED || !serverDb || !isFirebaseServerConfigured) {
+    updateFirebaseHealth('skipped');
+    return null;
+  }
+
+  if (Date.now() < firebaseRetryAt) {
+    updateFirebaseHealth('unhealthy');
+    return null;
+  }
 
   try {
-    const snapshot = await getDoc(doc(serverDb, collectionName, docId));
+    const snapshot = await withTimeout(
+      getDoc(doc(serverDb, collectionName, docId)),
+      FIREBASE_FETCH_TIMEOUT_MS
+    );
     if (!snapshot.exists()) return null;
     const data = snapshot.data();
+    firebaseRetryAt = 0;
+    updateFirebaseHealth('healthy');
     return isObject(data) ? data : null;
   } catch {
+    firebaseRetryAt = Date.now() + FIREBASE_FAILURE_BACKOFF_MS;
+    updateFirebaseHealth('unhealthy');
     return null;
   }
 };
@@ -215,7 +324,7 @@ const buildKnowledgePrompt = (data: KnowledgeData, query: string) => {
   ].join('\n');
 };
 
-const loadKnowledgeData = async (): Promise<KnowledgeData> => {
+const loadKnowledgeData = async (mode: ContentMode): Promise<KnowledgeData> => {
   const fallback: KnowledgeData = {
     faqs,
     tourPackages,
@@ -226,11 +335,11 @@ const loadKnowledgeData = async (): Promise<KnowledgeData> => {
   };
 
   const [faqsDoc, toursDoc, resortsDoc, servicesDoc, knowledgeDoc] = await Promise.all([
-    readDocData('contentData', 'faqs'),
-    readDocData('contentData', 'tours'),
-    readDocData('contentData', 'resorts'),
-    readDocData('contentData', 'services'),
-    readDocData('siteContent', 'knowledge'),
+    readDocData('contentData', 'faqs', mode),
+    readDocData('contentData', 'tours', mode),
+    readDocData('contentData', 'resorts', mode),
+    readDocData('contentData', 'services', mode),
+    readDocData('siteContent', 'knowledge', mode),
   ]);
 
   const firebaseFaqs = Array.isArray(faqsDoc?.items)
@@ -296,8 +405,9 @@ const loadKnowledgeData = async (): Promise<KnowledgeData> => {
 };
 
 const getCachedKnowledge = async (): Promise<CachedKnowledge> => {
+  const mode = await getEffectiveMode();
   const now = Date.now();
-  if (cachedKnowledge && cachedKnowledge.expiresAt > now) {
+  if (cachedKnowledge && cachedKnowledge.mode === mode && cachedKnowledge.expiresAt > now) {
     return cachedKnowledge;
   }
 
@@ -307,9 +417,10 @@ const getCachedKnowledge = async (): Promise<CachedKnowledge> => {
 
   inFlightKnowledgeLoad = (async () => {
     try {
-      const knowledge = await loadKnowledgeData();
+      const knowledge = await loadKnowledgeData(mode);
       const nextCache: CachedKnowledge = {
         knowledge,
+        mode,
         expiresAt: Date.now() + KNOWLEDGE_CACHE_TTL_MS,
       };
 
@@ -325,6 +436,37 @@ const getCachedKnowledge = async (): Promise<CachedKnowledge> => {
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
+
+  if (isObject(body) && body.action === 'status') {
+    const mode = await getEffectiveMode();
+    const now = Date.now();
+    return Response.json({
+      ok: true,
+      contentMode: mode,
+      manualContentMode,
+      firebaseContentEnabled: FIREBASE_CONTENT_ENABLED,
+      firebaseConfigured: !!serverDb && isFirebaseServerConfigured,
+      firebaseHealth,
+      firebaseBackoffActive: now < firebaseRetryAt,
+      firebaseRetryAt: firebaseRetryAt || null,
+      cacheExpiresAt: cachedKnowledge?.expiresAt ?? null,
+      cacheMode: cachedKnowledge?.mode ?? null,
+    });
+  }
+
+  if (isObject(body) && body.action === 'setContentMode') {
+    const nextMode = normalizeMode(body.mode);
+    manualContentMode = nextMode;
+    cachedModeFromDb = {
+      mode: nextMode,
+      expiresAt: Date.now() + CONTENT_MODE_CACHE_TTL_MS,
+    };
+    cachedKnowledge = null;
+    inFlightKnowledgeLoad = null;
+
+    await getCachedKnowledge();
+    return Response.json({ ok: true, contentMode: nextMode });
+  }
 
   if (isObject(body) && body.action === 'refreshKnowledge') {
     cachedKnowledge = null;

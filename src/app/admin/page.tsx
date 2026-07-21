@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { defaultLandingContent, normalizeLandingPageContent, type LandingPageContent } from '@/data/landingContent';
 import { faqs } from '@/data/faqs';
 import { resorts } from '@/data/resorts';
@@ -12,7 +13,7 @@ import { testimonials } from '@/data/testimonials';
 import { chatResponses } from '@/data/chatResponses';
 import { tourPackages, sharedGroupTours, tourContact } from '@/data/tours';
 import { intentKnowledgeSections, extendedKnowledge } from '@/data/extendedKnowledge';
-import { auth, db, isFirebaseConfigured } from '@/lib/firebase';
+import { auth, db, isFirebaseConfigured, storage } from '@/lib/firebase';
 
 type SectionId = 'overview' | 'carousel' | 'news' | 'data' | 'collections' | 'profile';
 type TextFieldKey = Exclude<keyof LandingPageContent, 'imageSlides' | 'newsSlides'>;
@@ -25,6 +26,23 @@ type EditableDataKey =
   | 'tours'
   | 'chatResponses'
   | 'knowledge';
+
+type ContentMode = 'auto' | 'firebase' | 'local';
+
+type ChatStatus = {
+  contentMode: ContentMode;
+  manualContentMode: ContentMode;
+  firebaseContentEnabled: boolean;
+  firebaseConfigured: boolean;
+  firebaseHealth: {
+    status: 'unknown' | 'healthy' | 'unhealthy' | 'skipped';
+    lastCheckedAt: number | null;
+    lastSuccessAt: number | null;
+    lastFailureAt: number | null;
+  };
+  firebaseBackoffActive: boolean;
+  firebaseRetryAt: number | null;
+};
 
 type AdminProfile = {
   displayName: string;
@@ -257,6 +275,11 @@ export default function AdminPage() {
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [isDataSaving, setIsDataSaving] = useState(false);
   const [isRefreshingKnowledge, setIsRefreshingKnowledge] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [uploadingSlideIndex, setUploadingSlideIndex] = useState<number | null>(null);
+  const [chatStatus, setChatStatus] = useState<ChatStatus | null>(null);
+  const [isStatusLoading, setIsStatusLoading] = useState(false);
+  const [isSwitchingContentMode, setIsSwitchingContentMode] = useState(false);
   const [sessionEdits, setSessionEdits] = useState(0);
   const [noSignupUsers, setNoSignupUsers] = useState(0);
   const [now, setNow] = useState(() => new Date());
@@ -335,6 +358,12 @@ export default function AdminPage() {
     const next = current + 1;
     window.localStorage.setItem(storageKey, String(next));
     setNoSignupUsers(next);
+  }, [canRenderForm]);
+
+  useEffect(() => {
+    if (!canRenderForm) {
+      setIsSidebarOpen(false);
+    }
   }, [canRenderForm]);
 
   const loadCollectionJson = async (key: EditableDataKey) => {
@@ -451,6 +480,74 @@ export default function AdminPage() {
       setIsRefreshingKnowledge(false);
     }
   };
+
+  const fetchChatStatus = async (silent = false) => {
+    try {
+      if (!silent) setIsStatusLoading(true);
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'status' }),
+      });
+
+      if (!response.ok) {
+        if (!silent) {
+          const fallback = await response.text();
+          setDataStatus(fallback || 'Unable to read chatbot status.');
+        }
+        return;
+      }
+
+      const payload = (await response.json()) as ChatStatus;
+      setChatStatus(payload);
+    } catch (error) {
+      if (!silent) {
+        const message = error instanceof Error ? error.message : 'Unable to read chatbot status.';
+        setDataStatus(message);
+      }
+    } finally {
+      if (!silent) setIsStatusLoading(false);
+    }
+  };
+
+  const switchContentMode = async (mode: ContentMode) => {
+    try {
+      setIsSwitchingContentMode(true);
+      setDataStatus('Switching chatbot content mode...');
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'setContentMode', mode }),
+      });
+
+      if (!response.ok) {
+        const fallback = await response.text();
+        setDataStatus(fallback || 'Unable to switch content mode.');
+        return;
+      }
+
+      await fetchChatStatus(true);
+      setDataStatus(`Chatbot content mode switched to ${mode}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to switch content mode.';
+      setDataStatus(message);
+    } finally {
+      setIsSwitchingContentMode(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!canRenderForm) return;
+    void fetchChatStatus(true);
+
+    const timer = window.setInterval(() => {
+      void fetchChatStatus(true);
+    }, 20000);
+
+    return () => window.clearInterval(timer);
+  }, [canRenderForm]);
 
   const login = async (event: FormEvent) => {
     event.preventDefault();
@@ -727,6 +824,33 @@ export default function AdminPage() {
     }));
   };
 
+  const uploadCarouselImage = async (index: number, file: File) => {
+    if (!storage || !user || !isAdmin) {
+      setContentStatus('Image upload is unavailable. Check Firebase Storage configuration.');
+      return;
+    }
+
+    try {
+      setUploadingSlideIndex(index);
+      setContentStatus('Uploading image...');
+
+      const extension = file.name.split('.').pop() ?? 'jpg';
+      const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
+      const imageRef = storageRef(storage, `admin/carousel/${user.uid}/${uniqueName}`);
+
+      await uploadBytes(imageRef, file);
+      const imageUrl = await getDownloadURL(imageRef);
+
+      updateImageSlide(index, 'imageUrl', imageUrl);
+      setContentStatus('Image uploaded. Save all changes to publish this slide update.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Image upload failed.';
+      setContentStatus(message);
+    } finally {
+      setUploadingSlideIndex(null);
+    }
+  };
+
   const searchValue = searchTerm.trim().toLowerCase();
 
   const filteredTextFields = textFields.filter(({ key, label }) => {
@@ -829,7 +953,20 @@ export default function AdminPage() {
 
         {canRenderForm ? (
           <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-            <aside className="rounded-3xl border border-cyan-200/25 bg-[#0f2255]/75 p-3 backdrop-blur">
+            {isSidebarOpen ? (
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(false)}
+                className="fixed inset-0 z-30 bg-[#010712]/65 lg:hidden"
+                aria-label="Close menu"
+              />
+            ) : null}
+
+            <aside
+              className={`fixed inset-y-0 left-0 z-40 w-[86vw] max-w-[320px] overflow-y-auto border-r border-cyan-200/25 bg-[#0f2255]/95 p-3 backdrop-blur transition-transform duration-200 lg:static lg:w-auto lg:max-w-none lg:rounded-3xl lg:border lg:bg-[#0f2255]/75 ${
+                isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+              }`}
+            >
               <div className="rounded-2xl border border-cyan-200/20 bg-[#132d68]/60 p-3">
                 <div className="flex items-center gap-2">
                   <img
@@ -849,7 +986,10 @@ export default function AdminPage() {
                   <button
                     key={section.id}
                     type="button"
-                    onClick={() => setActiveSection(section.id)}
+                    onClick={() => {
+                      setActiveSection(section.id);
+                      setIsSidebarOpen(false);
+                    }}
                     className={`rounded-2xl border px-3 py-2 text-left transition ${
                       activeSection === section.id
                         ? 'border-cyan-300/70 bg-cyan-300/20 text-white'
@@ -890,6 +1030,21 @@ export default function AdminPage() {
             </aside>
 
             <section className="rounded-3xl border border-cyan-200/25 bg-[#0f2255]/75 p-4 backdrop-blur sm:p-5 lg:p-6">
+              <div className="mb-3 lg:hidden">
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-cyan-200/35 bg-[#0d2862]/75 px-3 py-2 text-sm text-cyan-100"
+                >
+                  <span className="inline-flex h-3.5 w-4 flex-col justify-between" aria-hidden="true">
+                    <span className="block h-[2px] w-full rounded-full bg-cyan-100" />
+                    <span className="block h-[2px] w-full rounded-full bg-cyan-100" />
+                    <span className="block h-[2px] w-full rounded-full bg-cyan-100" />
+                  </span>
+                  Menu
+                </button>
+              </div>
+
               <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-200/20 bg-[#132d68]/50 p-3">
                 <div>
                   <h1 className="text-xl font-semibold sm:text-2xl">Admin Dashboard</h1>
@@ -988,6 +1143,36 @@ export default function AdminPage() {
                           onChange={(event) => updateImageSlide(index, 'focus', event.target.value)}
                           placeholder="center / top / bottom"
                         />
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <label className="cursor-pointer rounded-lg border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-1 text-xs text-cyan-100">
+                          {uploadingSlideIndex === index ? 'Uploading image...' : 'Upload image'}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            disabled={uploadingSlideIndex === index}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (file) {
+                                void uploadCarouselImage(index, file);
+                              }
+                              event.currentTarget.value = '';
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateImageSlide(index, 'imageUrl', '');
+                            setContentStatus('Slide image removed. Save all changes to publish this update.');
+                          }}
+                          className="rounded-lg border border-rose-300/40 px-3 py-1 text-xs text-rose-100"
+                        >
+                          Remove image
+                        </button>
+                        <p className="text-[11px] text-cyan-100/75">Select an image file to auto-fill the Image URL.</p>
                       </div>
 
                       {form.imageSlides.length > 1 ? (
@@ -1206,6 +1391,54 @@ export default function AdminPage() {
                     <p className="mt-1 text-xs text-cyan-100/80">
                       Edit content data directly as JSON, then save to Firebase without redeploying code.
                     </p>
+
+                    <div className="mt-3 rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs text-cyan-100/80">Chatbot Content Source Mode</p>
+                        <button
+                          type="button"
+                          onClick={() => void fetchChatStatus()}
+                          disabled={isStatusLoading}
+                          className="rounded-lg border border-cyan-200/35 px-2 py-1 text-[11px] text-cyan-100 disabled:opacity-70"
+                        >
+                          {isStatusLoading ? 'Checking...' : 'Refresh status'}
+                        </button>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(['auto', 'firebase', 'local'] as ContentMode[]).map((mode) => {
+                          const active = (chatStatus?.manualContentMode ?? 'auto') === mode;
+                          return (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => void switchContentMode(mode)}
+                              disabled={isSwitchingContentMode}
+                              className={`rounded-lg border px-2 py-1 text-[11px] uppercase tracking-[0.08em] transition disabled:opacity-70 ${
+                                active
+                                  ? 'border-cyan-300/70 bg-cyan-300/20 text-white'
+                                  : 'border-cyan-200/30 bg-[#102b66]/60 text-cyan-100/80 hover:border-cyan-200/55'
+                              }`}
+                            >
+                              {mode}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="text-cyan-100/80">Effective mode: {chatStatus?.contentMode ?? 'unknown'}</span>
+                        <span className="text-cyan-100/60">|</span>
+                        <span className="text-cyan-100/80">
+                          Firebase health: {chatStatus?.firebaseHealth.status ?? 'unknown'}
+                        </span>
+                        {chatStatus?.firebaseBackoffActive ? (
+                          <span className="rounded-md border border-amber-300/40 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-100">
+                            Backoff active
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
 
                     <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                       {(Object.keys(dataCollectionLabels) as EditableDataKey[]).map((key) => (

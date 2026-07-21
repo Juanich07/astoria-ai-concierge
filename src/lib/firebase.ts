@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -27,11 +28,13 @@ const isFirebaseConfigured =
 
 let db: ReturnType<typeof getFirestore> | null = null;
 let auth: ReturnType<typeof getAuth> | null = null;
+let storage: ReturnType<typeof getStorage> | null = null;
 
 if (isFirebaseConfigured) {
   const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
   db = getFirestore(app);
   auth = getAuth(app);
+  storage = getStorage(app);
 }
 
-export { auth, db, isFirebaseConfigured };
+export { auth, db, storage, isFirebaseConfigured };
