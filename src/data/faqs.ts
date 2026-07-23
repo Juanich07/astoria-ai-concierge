@@ -2,7 +2,7 @@ export const faqs = [
   {
     id: 'check-in-checkout',
     question: 'What are the check-in and check-out times?',
-    answer: 'Check-in: 2:00 PM. Check-out: 12:00 PM.'
+    answer: 'Check-in: 1:00 PM. Check-out: 12:00 PM.'
   },
   {
     id: 'front-desk',

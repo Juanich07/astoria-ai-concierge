@@ -15,7 +15,7 @@ export type HotelSettings = {
 };
 
 export const defaultSettings: HotelSettings = {
-  checkIn: '2:00 PM',
+  checkIn: '1:00 PM',
   checkOut: '12:00 PM',
   frontDeskLocations: ['The Nest', 'The Canopy'],
   restaurantName: 'The Reserve',

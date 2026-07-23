@@ -429,19 +429,20 @@ const loadKnowledgeData = async (mode: ContentMode): Promise<KnowledgeData> => {
 
   const firebaseSettings = isObject(settingsDoc)
     ? Object.entries(defaultSettings).reduce<HotelSettings>((acc, [key, value]) => {
+        const k = key as keyof HotelSettings;
         const rawValue = settingsDoc[key];
         const isArray = Array.isArray(value);
         const isString = typeof value === 'string';
         const isNumber = typeof value === 'number';
 
         if (isArray && Array.isArray(rawValue)) {
-          acc[key as keyof HotelSettings] = rawValue as any;
+          (acc as any)[k] = rawValue;
         } else if (isString && typeof rawValue === 'string' && rawValue.trim().length > 0) {
-          acc[key as keyof HotelSettings] = rawValue as any;
+          (acc as any)[k] = rawValue;
         } else if (isNumber && typeof rawValue === 'number') {
-          acc[key as keyof HotelSettings] = rawValue as any;
+          (acc as any)[k] = rawValue;
         } else {
-          acc[key as keyof HotelSettings] = value;
+          (acc as any)[k] = value;
         }
         return acc;
       }, { ...defaultSettings })

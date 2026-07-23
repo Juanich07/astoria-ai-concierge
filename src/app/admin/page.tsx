@@ -1499,38 +1499,52 @@ export default function AdminPage() {
                       ))}
                     </div>
 
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void loadCollectionJson(selectedDataKey)}
-                        disabled={isDataLoading}
-                        className="rounded-xl border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-2 text-xs text-cyan-100 disabled:opacity-70"
-                      >
-                        {isDataLoading ? 'Loading...' : 'Reload from Firebase'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={saveCollectionJson}
-                        disabled={isDataSaving}
-                        className="rounded-xl bg-cyan-400 px-3 py-2 text-xs font-semibold text-[#04204e] transition hover:bg-cyan-300 disabled:opacity-70"
-                      >
-                        {isDataSaving ? 'Saving...' : 'Save JSON'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={resetCollectionJson}
-                        className="rounded-xl border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-2 text-xs text-cyan-100"
-                      >
-                        Reset to code defaults
-                      </button>
-                      <button
-                        type="button"
-                        onClick={refreshKnowledgeNow}
-                        disabled={isRefreshingKnowledge}
-                        className="rounded-xl border border-emerald-200/35 bg-[#0f3b3a]/80 px-3 py-2 text-xs text-emerald-100 disabled:opacity-70"
-                      >
-                        {isRefreshingKnowledge ? 'Refreshing bot...' : 'Refresh chatbot knowledge now'}
-                      </button>
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center gap-2 rounded-xl border border-cyan-200/20 bg-[#132d68]/50 px-3 py-2">
+                        <span className="text-lg">✏️</span>
+                        <div className="flex-1">
+                          <p className="text-xs font-semibold text-cyan-100">Edit {dataCollectionLabels[selectedDataKey]}</p>
+                          <p className="text-[10px] text-cyan-100/70">Make changes below and click "💾 Save" to update Firebase</p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void loadCollectionJson(selectedDataKey)}
+                          disabled={isDataLoading}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-2 text-xs text-cyan-100 transition hover:border-cyan-200/60 disabled:opacity-70"
+                        >
+                          <span className="text-sm">🔄</span>
+                          {isDataLoading ? 'Loading...' : 'Reload from Firebase'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={saveCollectionJson}
+                          disabled={isDataSaving}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-400 px-3 py-2 text-xs font-semibold text-[#04204e] transition hover:bg-cyan-300 disabled:opacity-70"
+                        >
+                          <span className="text-sm">💾</span>
+                          {isDataSaving ? 'Saving...' : 'Save to Firebase'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={resetCollectionJson}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-2 text-xs text-cyan-100 transition hover:border-cyan-200/60"
+                        >
+                          <span className="text-sm">↺</span>
+                          Reset to defaults
+                        </button>
+                        <button
+                          type="button"
+                          onClick={refreshKnowledgeNow}
+                          disabled={isRefreshingKnowledge}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200/35 bg-[#0f3b3a]/80 px-3 py-2 text-xs text-emerald-100 transition hover:border-emerald-200/60 disabled:opacity-70"
+                        >
+                          <span className="text-sm">🤖</span>
+                          {isRefreshingKnowledge ? 'Refreshing bot...' : 'Refresh chatbot'}
+                        </button>
+                      </div>
                     </div>
 
                     {useStructuredEditor ? (
@@ -1854,9 +1868,18 @@ export default function AdminPage() {
                     ) : null}
 
                     <div className="mt-3 rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-2">
-                      <p className="mb-2 text-xs text-cyan-100/70">
-                        Editing: {dataCollectionLabels[selectedDataKey]}
-                      </p>
+                      <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-cyan-200/30 bg-[#0f2a5a]/70 px-2.5 py-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">📝</span>
+                          <div>
+                            <p className="text-xs font-semibold text-cyan-50">{dataCollectionLabels[selectedDataKey]} JSON</p>
+                            <p className="text-[10px] text-cyan-100/70">Edit the values directly</p>
+                          </div>
+                        </div>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${collectionHasInvalidJson ? 'bg-rose-500/30 text-rose-100' : 'bg-emerald-500/30 text-emerald-100'}`}>
+                          {collectionHasInvalidJson ? '❌ Invalid JSON' : '✓ Valid'}
+                        </span>
+                      </div>
                       <textarea
                         className={`${fieldClassName} min-h-[380px] font-mono text-xs`}
                         value={dataJson}

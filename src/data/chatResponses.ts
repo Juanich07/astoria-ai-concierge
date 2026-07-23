@@ -1,5 +1,5 @@
 export const chatResponses = {
-  checkIn: 'Check-in is at 2:00 PM.',
+  checkIn: 'Check-in is at 1:00 PM.',
   checkOut: 'Check-out is at 12:00 PM.',
   amenities: 'Pools, spa, dining, activities, island tours, waterpark, and gym.',
   spa: 'SPA-TIFY at The Alcove, 2nd floor. Massages, body scrubs, and nail care.',

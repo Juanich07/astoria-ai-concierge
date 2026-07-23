@@ -50,7 +50,7 @@ export const intentKnowledgeSections = {
   accommodations: [
     'ACCOMMODATIONS',
     'Common policies for listed rooms:',
-    '- Check-in: 2:00 PM',
+    '- Check-in: 1:00 PM',
     '- Check-out: 12:00 PM',
     '- Child policy: Only two children aged 11 years and below are free on accommodation (excluding buffet or set breakfast depending on room category).',
     '- Breakfast: Daily set breakfast',
