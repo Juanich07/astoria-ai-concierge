@@ -13,6 +13,7 @@ import { testimonials } from '@/data/testimonials';
 import { chatResponses } from '@/data/chatResponses';
 import { tourPackages, sharedGroupTours, tourContact } from '@/data/tours';
 import { intentKnowledgeSections, extendedKnowledge } from '@/data/extendedKnowledge';
+import { defaultSettings, type HotelSettings } from '@/data/settings';
 import { auth, db, isFirebaseConfigured, storage } from '@/lib/firebase';
 
 type SectionId = 'overview' | 'carousel' | 'news' | 'data' | 'collections' | 'profile';
@@ -25,7 +26,8 @@ type EditableDataKey =
   | 'testimonials'
   | 'tours'
   | 'chatResponses'
-  | 'knowledge';
+  | 'knowledge'
+  | 'settings';
 
 type ContentMode = 'auto' | 'firebase' | 'local';
 
@@ -71,6 +73,7 @@ const dataCollectionLabels: Record<EditableDataKey, string> = {
   tours: 'Tours',
   chatResponses: 'Chat Responses',
   knowledge: 'Knowledge Sections',
+  settings: 'Hotel Settings',
 };
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -103,13 +106,15 @@ const buildDefaultPayload = (key: EditableDataKey) => {
         intentSections: intentKnowledgeSections,
         fullText: extendedKnowledge,
       };
+    case 'settings':
+      return defaultSettings;
     default:
       return {};
   }
 };
 
 const getCollectionRef = (key: EditableDataKey) => {
-  if (key === 'chatResponses' || key === 'knowledge') {
+  if (key === 'chatResponses' || key === 'knowledge' || key === 'settings') {
     return { collectionName: 'siteContent', docId: key };
   }
 
@@ -161,6 +166,21 @@ const getPayloadFromSnapshot = (key: EditableDataKey, raw: Record<string, unknow
             : extendedKnowledge,
       };
     }
+    case 'settings': {
+      const defaults = defaultSettings;
+      const merged: Partial<HotelSettings> = {};
+
+      for (const [key, value] of Object.entries(defaults)) {
+        const rawValue = raw[key];
+        if (typeof rawValue === typeof value && rawValue !== null) {
+          merged[key as keyof HotelSettings] = rawValue as any;
+        } else {
+          merged[key as keyof HotelSettings] = value;
+        }
+      }
+
+      return merged as HotelSettings;
+    }
     default:
       return buildDefaultPayload(key);
   }
@@ -188,6 +208,8 @@ const validateParsedPayload = (key: EditableDataKey, payload: unknown): string |
       if (!isObject(payload)) return 'Expected a JSON object with intentSections and fullText.';
       if (!isObject(payload.intentSections)) return 'The knowledge payload must include an object field named intentSections.';
       return null;
+    case 'settings':
+      return isObject(payload) ? null : 'Expected a JSON object for hotel settings.';
     default:
       return 'Unsupported data file type.';
   }
@@ -236,6 +258,11 @@ const buildSavePayload = (key: EditableDataKey, payload: unknown, uid: string) =
         ...baseMeta,
       };
     }
+    case 'settings':
+      return {
+        ...(payload as Record<string, unknown>),
+        ...baseMeta,
+      };
     default:
       return {
         ...baseMeta,

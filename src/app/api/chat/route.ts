@@ -10,6 +10,7 @@ import { services } from '@/data/services';
 import { tourPackages, tourContact } from '@/data/tours';
 import { chatResponses } from '@/data/chatResponses';
 import { intentKnowledgeSections } from '../../../data/extendedKnowledge';
+import { defaultSettings, type HotelSettings } from '@/data/settings';
 import { isFirebaseServerConfigured, serverDb } from '@/lib/firebaseServer';
 
 export const runtime = 'nodejs';
@@ -41,6 +42,7 @@ type KnowledgeData = {
   services: Array<{ title: string; description: string }>;
   chatResponses: Record<string, string>;
   intentSections: Record<string, string>;
+  settings: HotelSettings;
 };
 
 type ContentMode = 'auto' | 'firebase' | 'local';
@@ -306,6 +308,19 @@ const buildKnowledgePrompt = (data: KnowledgeData, query: string) => {
 
   return [
     'KNOWLEDGE BASE - Answer only from this:',
+    '\nHOTEL SETTINGS (CRITICAL - Always use these values):',
+    `- Check-in Time: ${data.settings.checkIn}`,
+    `- Check-out Time: ${data.settings.checkOut}`,
+    `- Front Desk Locations: ${data.settings.frontDeskLocations.join(', ')}`,
+    `- Emergency Number: ${data.settings.emergencyNumber}`,
+    `- Restaurant Name: ${data.settings.restaurantName}`,
+    `- Restaurant Hours: ${data.settings.restaurantHours}`,
+    `- In-Room Dining Hours: ${data.settings.inRoomDiningHours}`,
+    `- Gym Hours: ${data.settings.gymHours}`,
+    `- Pool Hours: ${data.settings.poolHours}`,
+    `- Housekeeping Hours: ${data.settings.housekeepingHours}`,
+    `- Recreation Hours: ${data.settings.recreationHours}`,
+    `- WiFi Policy: ${data.settings.wifiPolicy}`,
     '\nQUICK RESPONSES (authoritative when applicable):',
     ...quickResponseLines,
     '\nFAQS (most relevant):',
@@ -339,15 +354,17 @@ const loadKnowledgeData = async (mode: ContentMode): Promise<KnowledgeData> => {
     services,
     chatResponses,
     intentSections: intentKnowledgeSections,
+    settings: defaultSettings,
   };
 
-  const [faqsDoc, toursDoc, resortsDoc, servicesDoc, knowledgeDoc, chatResponsesDoc] = await Promise.all([
+  const [faqsDoc, toursDoc, resortsDoc, servicesDoc, knowledgeDoc, chatResponsesDoc, settingsDoc] = await Promise.all([
     readDocData('contentData', 'faqs', mode),
     readDocData('contentData', 'tours', mode),
     readDocData('contentData', 'resorts', mode),
     readDocData('contentData', 'services', mode),
     readDocData('siteContent', 'knowledge', mode),
     readDocData('siteContent', 'chatResponses', mode),
+    readDocData('siteContent', 'settings', mode),
   ]);
 
   const firebaseFaqs = Array.isArray(faqsDoc?.items)
@@ -408,6 +425,18 @@ const loadKnowledgeData = async (mode: ContentMode): Promise<KnowledgeData> => {
     return acc;
   }, {});
 
+  const firebaseSettings = isObject(settingsDoc)
+    ? Object.entries(defaultSettings).reduce<Partial<HotelSettings>>((acc, [key, value]) => {
+        const rawValue = settingsDoc[key];
+        if (typeof rawValue === typeof value && rawValue !== null) {
+          acc[key as keyof HotelSettings] = rawValue as any;
+        } else {
+          acc[key as keyof HotelSettings] = value;
+        }
+        return acc;
+      }, {} as Partial<HotelSettings>)
+    : {};
+
   return {
     faqs: firebaseFaqs.length ? firebaseFaqs : fallback.faqs,
     tourPackages: firebaseTourPackages.length ? firebaseTourPackages : fallback.tourPackages,
@@ -416,6 +445,7 @@ const loadKnowledgeData = async (mode: ContentMode): Promise<KnowledgeData> => {
     services: firebaseServices.length ? firebaseServices : fallback.services,
     chatResponses: firebaseChatResponses,
     intentSections: firebaseIntentSections ?? fallback.intentSections,
+    settings: (firebaseSettings as HotelSettings) || fallback.settings,
   };
 };
 
