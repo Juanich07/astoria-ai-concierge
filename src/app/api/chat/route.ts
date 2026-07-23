@@ -306,21 +306,23 @@ const buildKnowledgePrompt = (data: KnowledgeData, query: string) => {
   const selectedIntents = detectRelevantIntents(query, data.intentSections);
   const quickResponseLines = Object.entries(data.chatResponses).map(([key, value]) => `- ${key}: ${value}`);
 
+  const settings = data.settings || {};
+
   return [
     'KNOWLEDGE BASE - Answer only from this:',
     '\nHOTEL SETTINGS (CRITICAL - Always use these values):',
-    `- Check-in Time: ${data.settings.checkIn}`,
-    `- Check-out Time: ${data.settings.checkOut}`,
-    `- Front Desk Locations: ${data.settings.frontDeskLocations.join(', ')}`,
-    `- Emergency Number: ${data.settings.emergencyNumber}`,
-    `- Restaurant Name: ${data.settings.restaurantName}`,
-    `- Restaurant Hours: ${data.settings.restaurantHours}`,
-    `- In-Room Dining Hours: ${data.settings.inRoomDiningHours}`,
-    `- Gym Hours: ${data.settings.gymHours}`,
-    `- Pool Hours: ${data.settings.poolHours}`,
-    `- Housekeeping Hours: ${data.settings.housekeepingHours}`,
-    `- Recreation Hours: ${data.settings.recreationHours}`,
-    `- WiFi Policy: ${data.settings.wifiPolicy}`,
+    `- Check-in Time: ${settings.checkIn || '2:00 PM'}`,
+    `- Check-out Time: ${settings.checkOut || '12:00 PM'}`,
+    `- Front Desk Locations: ${Array.isArray(settings.frontDeskLocations) ? settings.frontDeskLocations.join(', ') : 'The Nest, The Canopy'}`,
+    `- Emergency Number: ${settings.emergencyNumber || '0'}`,
+    `- Restaurant Name: ${settings.restaurantName || 'The Reserve'}`,
+    `- Restaurant Hours: ${settings.restaurantHours || '6:30 AM - 10:00 PM'}`,
+    `- In-Room Dining Hours: ${settings.inRoomDiningHours || '6:00 AM - 11:30 PM'}`,
+    `- Gym Hours: ${settings.gymHours || '6:00 AM - 10:00 PM'}`,
+    `- Pool Hours: ${settings.poolHours || '6:00 AM - 10:00 PM'}`,
+    `- Housekeeping Hours: ${settings.housekeepingHours || '9:00 AM - 5:00 PM'}`,
+    `- Recreation Hours: ${settings.recreationHours || '8:00 AM - 11:00 PM'}`,
+    `- WiFi Policy: ${settings.wifiPolicy || 'Free WiFi for 4 devices per room'}`,
     '\nQUICK RESPONSES (authoritative when applicable):',
     ...quickResponseLines,
     '\nFAQS (most relevant):',
@@ -426,16 +428,24 @@ const loadKnowledgeData = async (mode: ContentMode): Promise<KnowledgeData> => {
   }, {});
 
   const firebaseSettings = isObject(settingsDoc)
-    ? Object.entries(defaultSettings).reduce<Partial<HotelSettings>>((acc, [key, value]) => {
+    ? Object.entries(defaultSettings).reduce<HotelSettings>((acc, [key, value]) => {
         const rawValue = settingsDoc[key];
-        if (typeof rawValue === typeof value && rawValue !== null) {
+        const isArray = Array.isArray(value);
+        const isString = typeof value === 'string';
+        const isNumber = typeof value === 'number';
+
+        if (isArray && Array.isArray(rawValue)) {
+          acc[key as keyof HotelSettings] = rawValue as any;
+        } else if (isString && typeof rawValue === 'string' && rawValue.trim().length > 0) {
+          acc[key as keyof HotelSettings] = rawValue as any;
+        } else if (isNumber && typeof rawValue === 'number') {
           acc[key as keyof HotelSettings] = rawValue as any;
         } else {
           acc[key as keyof HotelSettings] = value;
         }
         return acc;
-      }, {} as Partial<HotelSettings>)
-    : {};
+      }, { ...defaultSettings })
+    : fallback.settings;
 
   return {
     faqs: firebaseFaqs.length ? firebaseFaqs : fallback.faqs,
@@ -445,7 +455,7 @@ const loadKnowledgeData = async (mode: ContentMode): Promise<KnowledgeData> => {
     services: firebaseServices.length ? firebaseServices : fallback.services,
     chatResponses: firebaseChatResponses,
     intentSections: firebaseIntentSections ?? fallback.intentSections,
-    settings: (firebaseSettings as HotelSettings) || fallback.settings,
+    settings: firebaseSettings,
   };
 };
 
