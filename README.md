@@ -77,9 +77,9 @@ Required for Firestore save button:
 
 Optional for server-side content sync from Firestore in `POST /api/chat`:
 
-- `ENABLE_FIREBASE_CONTENT=true`
+- `ENABLE_FIREBASE_CONTENT=false` to force local-only content
 
-If this flag is omitted, the API route uses local data files only and skips Firestore reads.
+If this flag is omitted, the API route will try Firestore reads when Firebase is configured and fall back to local data if the read fails.
 
 ## NPM Scripts
 

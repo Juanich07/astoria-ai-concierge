@@ -8,6 +8,7 @@ import { faqs } from '@/data/faqs';
 import { resorts } from '@/data/resorts';
 import { services } from '@/data/services';
 import { tourPackages, tourContact } from '@/data/tours';
+import { chatResponses } from '@/data/chatResponses';
 import { intentKnowledgeSections } from '../../../data/extendedKnowledge';
 import { isFirebaseServerConfigured, serverDb } from '@/lib/firebaseServer';
 
@@ -22,6 +23,7 @@ RULES:
 4. Use plain text only.
 5. Never use markdown formatting or symbols such as **, *, #, _, or backticks.
 6. Pick details from the most relevant intent section first (for example: dining, accommodations, amenities, waterpark, meetingsAndEvents, transport).
+7. When a matching quick response exists, prefer it and keep wording consistent with the quick response.
 
 RESPONSE FORMAT:
 - Add a brief welcome or acknowledgment
@@ -37,6 +39,7 @@ type KnowledgeData = {
   tourContact: { phone: string; email: string; note: string };
   resorts: Array<{ name: string; description: string }>;
   services: Array<{ title: string; description: string }>;
+  chatResponses: Record<string, string>;
   intentSections: Record<string, string>;
 };
 
@@ -47,7 +50,7 @@ const GROQ_CONNECTIVITY_TTL_MS = 30_000;
 const FIREBASE_FETCH_TIMEOUT_MS = 2_000;
 const FIREBASE_FAILURE_BACKOFF_MS = 60_000;
 const CONTENT_MODE_CACHE_TTL_MS = 30_000;
-const FIREBASE_CONTENT_ENABLED = process.env.ENABLE_FIREBASE_CONTENT === 'true';
+const FIREBASE_CONTENT_ENABLED = process.env.ENABLE_FIREBASE_CONTENT !== 'false';
 
 type ConnectivityCache = {
   reachable: boolean;
@@ -299,9 +302,12 @@ const buildKnowledgePrompt = (data: KnowledgeData, query: string) => {
   const selectedTours = pickTopMatches(data.tourPackages, query, (tour) => tour.name, 4);
   const selectedServices = pickTopMatches(data.services, query, (service) => `${service.title} ${service.description}`, 6);
   const selectedIntents = detectRelevantIntents(query, data.intentSections);
+  const quickResponseLines = Object.entries(data.chatResponses).map(([key, value]) => `- ${key}: ${value}`);
 
   return [
     'KNOWLEDGE BASE - Answer only from this:',
+    '\nQUICK RESPONSES (authoritative when applicable):',
+    ...quickResponseLines,
     '\nFAQS (most relevant):',
     ...selectedFaqs.map((faq) => `Q: ${faq.question}\nA: ${faq.answer}`),
     '\nTOURS (most relevant):',
@@ -331,15 +337,17 @@ const loadKnowledgeData = async (mode: ContentMode): Promise<KnowledgeData> => {
     tourContact,
     resorts,
     services,
+    chatResponses,
     intentSections: intentKnowledgeSections,
   };
 
-  const [faqsDoc, toursDoc, resortsDoc, servicesDoc, knowledgeDoc] = await Promise.all([
+  const [faqsDoc, toursDoc, resortsDoc, servicesDoc, knowledgeDoc, chatResponsesDoc] = await Promise.all([
     readDocData('contentData', 'faqs', mode),
     readDocData('contentData', 'tours', mode),
     readDocData('contentData', 'resorts', mode),
     readDocData('contentData', 'services', mode),
     readDocData('siteContent', 'knowledge', mode),
+    readDocData('siteContent', 'chatResponses', mode),
   ]);
 
   const firebaseFaqs = Array.isArray(faqsDoc?.items)
@@ -394,12 +402,19 @@ const loadKnowledgeData = async (mode: ContentMode): Promise<KnowledgeData> => {
 
   const firebaseIntentSections = parseIntentSections(knowledgeDoc?.intentSections);
 
+  const firebaseChatResponses = Object.keys(fallback.chatResponses).reduce<Record<string, string>>((acc, key) => {
+    const value = chatResponsesDoc?.[key];
+    acc[key] = typeof value === 'string' && value.length > 0 ? value : fallback.chatResponses[key];
+    return acc;
+  }, {});
+
   return {
     faqs: firebaseFaqs.length ? firebaseFaqs : fallback.faqs,
     tourPackages: firebaseTourPackages.length ? firebaseTourPackages : fallback.tourPackages,
     tourContact: firebaseTourContact,
     resorts: firebaseResorts.length ? firebaseResorts : fallback.resorts,
     services: firebaseServices.length ? firebaseServices : fallback.services,
+    chatResponses: firebaseChatResponses,
     intentSections: firebaseIntentSections ?? fallback.intentSections,
   };
 };

@@ -387,6 +387,19 @@ export default function AdminPage() {
     }
   };
 
+  const refreshChatbotKnowledge = async () => {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'refreshKnowledge' }),
+    });
+
+    if (!response.ok) {
+      const fallback = await response.text();
+      throw new Error(fallback || 'Knowledge refresh failed.');
+    }
+  };
+
   useEffect(() => {
     if (!canRenderForm) return;
     void loadCollectionJson(selectedDataKey);
@@ -411,6 +424,7 @@ export default function AdminPage() {
       const payload = buildSavePayload(selectedDataKey, parsed, user.uid);
 
       await setDoc(doc(db, ref.collectionName, ref.docId), payload, { merge: true });
+      await refreshChatbotKnowledge();
       setDataStatus(`${dataCollectionLabels[selectedDataKey]} saved successfully.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Saving data failed.';
@@ -741,6 +755,7 @@ export default function AdminPage() {
       );
 
       await batch.commit();
+      await refreshChatbotKnowledge();
       setForm(normalizedLanding);
       setContentStatus('All data has been uploaded to Firebase successfully.');
     } catch (error) {
