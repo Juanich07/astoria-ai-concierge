@@ -302,11 +302,22 @@ const resolveModel = async () => {
 const buildKnowledgePrompt = (data: KnowledgeData, query: string) => {
   const selectedFaqs = pickTopMatches(data.faqs, query, (faq) => `${faq.question} ${faq.answer}`, 10);
   const selectedTours = pickTopMatches(data.tourPackages, query, (tour) => tour.name, 4);
+  const selectedResorts = pickTopMatches(data.resorts, query, (resort) => `${resort.name} ${resort.description}`, 4);
   const selectedServices = pickTopMatches(data.services, query, (service) => `${service.title} ${service.description}`, 6);
   const selectedIntents = detectRelevantIntents(query, data.intentSections);
-  const quickResponseLines = Object.entries(data.chatResponses).map(([key, value]) => `- ${key}: ${value}`);
 
   const settings = data.settings || {};
+  const effectiveChatResponses = {
+    ...data.chatResponses,
+    checkIn: `Check-in is at ${settings.checkIn || '2:00 PM'}.`,
+    checkOut: `Check-out is at ${settings.checkOut || '12:00 PM'}.`,
+    restaurant: `${settings.restaurantName || 'The Reserve'}: ${settings.restaurantHours || '6:30 AM - 10:00 PM'}. In-room dining: ${settings.inRoomDiningHours || '6:00 AM - 11:30 PM'}.`,
+    gym: `Open ${settings.gymHours || '6:00 AM - 10:00 PM'}. Free for guests. Proper attire required.`,
+    pool: `Pools open ${settings.poolHours || '6:00 AM - 10:00 PM'}. Shower and proper attire required.`,
+    wifi: settings.wifiPolicy || `Free WiFi for ${settings.wifiDeviceLimit || 4} devices per room.`,
+    contact: `Dial ${settings.emergencyNumber || '0'} for Front Desk assistance.`,
+  };
+  const quickResponseLines = Object.entries(effectiveChatResponses).map(([key, value]) => `- ${key}: ${value}`);
 
   return [
     'KNOWLEDGE BASE - Answer only from this:',
@@ -335,8 +346,8 @@ const buildKnowledgePrompt = (data: KnowledgeData, query: string) => {
     `Phone: ${data.tourContact.phone}`,
     `Email: ${data.tourContact.email}`,
     `${data.tourContact.note}`,
-    '\nRESORT:',
-    ...data.resorts.map((resort) => `- ${resort.name}: ${resort.description}`),
+    '\nRESORT (most relevant):',
+    ...selectedResorts.map((resort) => `- ${resort.name}: ${resort.description}`),
     '\nSERVICES (most relevant):',
     ...selectedServices.map((service) => `- ${service.title}: ${service.description}`),
     '\nINTENT KNOWLEDGE SECTIONS (most relevant):',

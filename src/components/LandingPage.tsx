@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { doc, getDoc } from 'firebase/firestore';
 import { defaultLandingContent, normalizeLandingPageContent } from '@/data/landingContent';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
@@ -41,6 +42,7 @@ export default function LandingPage() {
     const newsCount = Math.max(content.newsSlides.length, 1);
 
     const interval = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       setImageIndex((current) => (current + 1) % imageCount);
       setNewsIndex((current) => (current + 1) % newsCount);
     }, 3200);
@@ -54,10 +56,13 @@ export default function LandingPage() {
   return (
     <main className="relative mx-auto min-h-screen max-w-[1440px] px-3 py-3 sm:px-6 sm:py-6 lg:px-10">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <img
+        <Image
           src="/icons/astoria-bg.webp"
           alt="Astoria Palawan background"
-          className="absolute inset-0 h-full w-full object-cover"
+          fill
+          priority
+          sizes="100vw"
+          className="absolute inset-0 object-cover"
         />
         <div className="absolute inset-0 bg-[#031510]/24" />
         <div className="absolute left-[-10%] top-[-12%] h-[26rem] w-[26rem] rounded-full bg-[#12aa9b]/35 blur-3xl" />
@@ -67,9 +72,12 @@ export default function LandingPage() {
 
       <div className="relative z-10 flex flex-col gap-2 pb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:pb-8">
         <div className="flex items-center gap-2">
-          <img
+          <Image
             src="/icons/astoria-logo.svg"
             alt="Astoria Palawan logo"
+            width={48}
+            height={48}
+            priority
             className="h-10 w-10 rounded-md border border-emerald-100/25 bg-white/80 object-cover sm:h-12 sm:w-12"
           />
           <div className="text-[10px] font-medium uppercase tracking-[0.24em] text-emerald-100/80 sm:text-sm">

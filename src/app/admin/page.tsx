@@ -5,6 +5,24 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } fr
 import { doc, getDoc, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { defaultLandingContent, normalizeLandingPageContent, type LandingPageContent } from '@/data/landingContent';
+import type { LucideIcon } from 'lucide-react';
+import {
+  ArrowRight,
+  CheckCircle2,
+  Database,
+  FileText,
+  Gauge,
+  LayoutGrid,
+  Lock,
+  Newspaper,
+  RefreshCcw,
+  Save,
+  ShieldCheck,
+  Sparkles,
+  UploadCloud,
+  User,
+  Zap,
+} from 'lucide-react';
 import { faqs } from '@/data/faqs';
 import { resorts } from '@/data/resorts';
 import { services } from '@/data/services';
@@ -53,7 +71,7 @@ type AdminProfile = {
 };
 
 const fieldClassName =
-  'w-full rounded-xl border border-cyan-300/20 bg-[#0c1f4f]/60 px-3 py-2 text-sm text-white outline-none placeholder:text-cyan-100/40 focus:border-cyan-300/60';
+  'w-full rounded-xl border border-emerald-300/20 bg-[#0b2d23]/60 px-3 py-2 text-sm text-white outline-none placeholder:text-emerald-200/40 focus:border-emerald-300/60';
 
 const sections: Array<{ id: SectionId; label: string; hint: string }> = [
   { id: 'overview', label: 'Dashboard', hint: 'Date, time, metrics' },
@@ -63,6 +81,15 @@ const sections: Array<{ id: SectionId; label: string; hint: string }> = [
   { id: 'collections', label: 'Data Files', hint: 'Edit resorts, faqs, tours, and more' },
   { id: 'profile', label: 'Admin Profile', hint: 'Picture, name, ID' },
 ];
+
+const sectionIcons: Record<SectionId, LucideIcon> = {
+  overview: Gauge,
+  carousel: LayoutGrid,
+  news: Newspaper,
+  data: Database,
+  collections: FileText,
+  profile: User,
+};
 
 const dataCollectionLabels: Record<EditableDataKey, string> = {
   faqs: 'FAQs',
@@ -80,6 +107,60 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const toPrettyJson = (value: unknown) => JSON.stringify(value, null, 2);
+
+const getReadableFirestoreError = (error: unknown, fallback: string) => {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : '';
+
+  if (code === 'permission-denied') {
+    return 'Missing or insufficient Firestore permissions for admin access. Update your Firestore rules for admins/{uid}, admin/{uid}, and siteContent/landingPage.';
+  }
+
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return fallback;
+};
+
+const getReadableAuthError = (error: unknown, fallback: string) => {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : '';
+
+  if (code === 'auth/invalid-credential') {
+    return 'Invalid email or password. Check credentials and try again.';
+  }
+
+  if (code === 'auth/user-not-found') {
+    return 'No account found for that email in this Firebase project.';
+  }
+
+  if (code === 'auth/wrong-password') {
+    return 'Incorrect password. Try again or reset the password in Firebase Auth.';
+  }
+
+  if (code === 'auth/invalid-email') {
+    return 'Email format is invalid. Please enter a valid email address.';
+  }
+
+  if (code === 'auth/too-many-requests') {
+    return 'Too many login attempts. Wait a few minutes, then try again.';
+  }
+
+  if (code === 'auth/operation-not-allowed') {
+    return 'Email/Password login is disabled in Firebase Authentication. Enable it in Sign-in method.';
+  }
+
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return fallback;
+};
 
 const buildDefaultPayload = (key: EditableDataKey) => {
   switch (key) {
@@ -339,35 +420,40 @@ export default function AdminPage() {
         return;
       }
 
-      const [adminsSnap, adminSnap] = await Promise.all([
-        getDoc(doc(db, 'admins', nextUser.uid)),
-        getDoc(doc(db, 'admin', nextUser.uid)),
-      ]);
+      try {
+        const [adminsSnap, adminSnap] = await Promise.all([
+          getDoc(doc(db, 'admins', nextUser.uid)),
+          getDoc(doc(db, 'admin', nextUser.uid)),
+        ]);
 
-      const isAdminsDoc = adminsSnap.exists();
-      const activeDoc = isAdminsDoc ? adminsSnap : adminSnap;
-      const allowed = activeDoc.exists() && activeDoc.data().active !== false;
+        const isAdminsDoc = adminsSnap.exists();
+        const activeDoc = isAdminsDoc ? adminsSnap : adminSnap;
+        const allowed = activeDoc.exists() && activeDoc.data().active !== false;
 
-      setAdminCollection(isAdminsDoc ? 'admins' : 'admin');
-      setIsAdmin(allowed);
+        setAdminCollection(isAdminsDoc ? 'admins' : 'admin');
+        setIsAdmin(allowed);
 
-      if (allowed) {
-        const data = activeDoc.data() ?? {};
-        setProfile({
-          displayName: typeof data.displayName === 'string' ? data.displayName : nextUser.displayName ?? '',
-          idNumber: typeof data.idNumber === 'string' ? data.idNumber : '',
-          photoUrl: typeof data.photoUrl === 'string' ? data.photoUrl : nextUser.photoURL ?? '',
-        });
+        if (allowed) {
+          const data = activeDoc.data() ?? {};
+          setProfile({
+            displayName: typeof data.displayName === 'string' ? data.displayName : nextUser.displayName ?? '',
+            idNumber: typeof data.idNumber === 'string' ? data.idNumber : '',
+            photoUrl: typeof data.photoUrl === 'string' ? data.photoUrl : nextUser.photoURL ?? '',
+          });
 
-        const contentSnap = await getDoc(doc(db, 'siteContent', 'landingPage'));
-        if (contentSnap.exists()) {
-          setForm(normalizeLandingPageContent(contentSnap.data()));
-        } else {
-          setForm(defaultLandingContent);
+          const contentSnap = await getDoc(doc(db, 'siteContent', 'landingPage'));
+          if (contentSnap.exists()) {
+            setForm(normalizeLandingPageContent(contentSnap.data()));
+          } else {
+            setForm(defaultLandingContent);
+          }
         }
+      } catch (error) {
+        setIsAdmin(false);
+        setContentStatus(getReadableFirestoreError(error, 'Unable to load admin data.'));
+      } finally {
+        setIsLoading(false);
       }
-
-      setIsLoading(false);
     });
 
     return () => unsubscribe();
@@ -475,26 +561,7 @@ export default function AdminPage() {
     }
   }, [dataJson]);
 
-  const useStructuredEditor = selectedDataKey === 'faqs' || selectedDataKey === 'resorts' || selectedDataKey === 'services';
   const collectionHasInvalidJson = dataJson.trim().length > 0 && parsedCollection === null;
-
-  const updateArrayCollection = (
-    expectedKey: 'faqs' | 'resorts' | 'services',
-    updater: (items: Array<Record<string, unknown>>) => Array<Record<string, unknown>>,
-    successMessage: string
-  ) => {
-    if (selectedDataKey !== expectedKey) return;
-    if (!Array.isArray(parsedCollection)) {
-      setDataStatus('Please fix JSON first before using form editing.');
-      return;
-    }
-
-    const normalizedItems = parsedCollection.filter(isObject).map((item) => ({ ...item }));
-    const nextItems = updater(normalizedItems);
-    setDataJson(toPrettyJson(nextItems));
-    setDataStatus(successMessage);
-    setSessionEdits((count) => count + 1);
-  };
 
   const refreshKnowledgeNow = async () => {
     try {
@@ -592,14 +659,16 @@ export default function AdminPage() {
 
   const login = async (event: FormEvent) => {
     event.preventDefault();
-    if (!auth) return;
+    if (!auth) {
+      setContentStatus('Firebase Authentication is not configured. Check NEXT_PUBLIC_FIREBASE_* environment values.');
+      return;
+    }
 
     try {
       setContentStatus('');
       await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Sign-in failed.';
-      setContentStatus(message);
+      setContentStatus(getReadableAuthError(error, 'Sign-in failed.'));
     }
   };
 
@@ -914,18 +983,18 @@ export default function AdminPage() {
   });
 
   const metrics = [
-    { label: 'No-signup users (device estimate)', value: noSignupUsers, detail: 'Tracks visits on this admin device' },
-    { label: 'Carousel slides', value: form.imageSlides.length, detail: 'Slides currently shown to users' },
-    { label: 'News cards', value: form.newsSlides.length, detail: 'News items currently active' },
-    { label: 'Session edits', value: sessionEdits, detail: 'Changes made in this session' },
+    { label: 'No-signup users', value: noSignupUsers, detail: 'Tracks admin-side activity', icon: User },
+    { label: 'Carousel slides', value: form.imageSlides.length, detail: 'Slides shown on the homepage', icon: LayoutGrid },
+    { label: 'News cards', value: form.newsSlides.length, detail: 'Active news updates', icon: Newspaper },
+    { label: 'Session edits', value: sessionEdits, detail: 'Changes made in this session', icon: Zap },
   ];
 
   if (!isFirebaseConfigured) {
     return (
-      <main className="min-h-screen bg-gradient-to-br from-[#08153a] via-[#0a2a72] to-[#03c5f8] px-4 py-10 text-white">
-        <div className="mx-auto max-w-xl rounded-3xl border border-cyan-200/30 bg-[#0f2255]/70 p-6 backdrop-blur">
-          <h1 className="text-2xl font-semibold">Admin Dashboard</h1>
-          <p className="mt-3 text-sm text-cyan-100/90">
+      <main className="min-h-screen bg-gradient-to-br from-[#07150f] via-[#0c271f] to-[#123a2f] px-4 py-10 text-white">
+        <div className="mx-auto max-w-xl rounded-[36px] border border-emerald-300/20 bg-[#0c2b1f]/85 p-6 shadow-2xl shadow-emerald-900/20 backdrop-blur">
+          <h1 className="text-3xl font-semibold text-emerald-100">Admin Dashboard</h1>
+          <p className="mt-3 text-sm text-emerald-200/80">
             Firebase environment values are missing. Add your NEXT_PUBLIC_FIREBASE variables to enable login and editing.
           </p>
         </div>
@@ -934,20 +1003,20 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-[#08153a] via-[#0a2a72] to-[#03c5f8] px-3 py-6 text-white sm:px-4 lg:px-6">
+    <main className="min-h-screen bg-slate-100 px-3 py-6 text-slate-900 sm:px-4 lg:px-6">
       <div className="mx-auto max-w-7xl">
         {!user ? (
-          <section className="mx-auto mt-10 w-full max-w-md rounded-3xl border border-cyan-200/30 bg-[#0f2255]/75 p-6 shadow-2xl backdrop-blur">
+          <section className="mx-auto mt-10 w-full max-w-md rounded-[32px] border border-emerald-300/20 bg-[#0c2b1f]/80 p-6 shadow-2xl shadow-emerald-900/25 backdrop-blur">
             <div className="flex items-center gap-3">
-              <img
-                src="/icons/astoria-logo.svg"
-                alt="Astoria Palawan logo"
-                className="h-12 w-12 rounded-md border border-cyan-200/30 bg-white/80 object-cover"
-              />
-              <h1 className="text-2xl font-semibold">Astoria Admin Login</h1>
+              <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-emerald-500/15 text-emerald-100 shadow-inner shadow-black/20">
+                <Lock className="h-6 w-6" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-semibold text-emerald-100">Admin Login</h1>
+                <p className="mt-1 text-sm text-emerald-200/80">Secure access to resort content and admin data.</p>
+              </div>
             </div>
-            <p className="mt-2 text-sm text-cyan-100/80">Sign in to manage carousel, news, and dashboard data.</p>
-            <form onSubmit={login} className="mt-5 space-y-3">
+            <form onSubmit={login} className="mt-6 space-y-4">
               <input
                 type="email"
                 value={email}
@@ -964,13 +1033,13 @@ export default function AdminPage() {
               />
               <button
                 type="submit"
-                className="w-full rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#04204e] transition hover:bg-cyan-300"
+                className="w-full rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
               >
                 Sign in
               </button>
             </form>
             {contentStatus ? (
-              <p className="mt-3 rounded-xl border border-cyan-200/30 bg-[#152f6c]/70 px-3 py-2 text-xs text-cyan-100/90">
+              <p className="mt-4 rounded-2xl border border-emerald-200/25 bg-[#0c3b22]/80 px-3 py-2 text-xs text-emerald-100/90">
                 {contentStatus}
               </p>
             ) : null}
@@ -978,16 +1047,27 @@ export default function AdminPage() {
         ) : null}
 
         {user && !isAdmin && !isLoading ? (
-          <section className="mx-auto mt-10 w-full max-w-2xl rounded-3xl border border-rose-300/40 bg-[#3a1b44]/75 p-6">
-            <h2 className="text-xl font-semibold text-rose-100">Access denied</h2>
-            <p className="mt-2 text-sm text-rose-100/90">
-              Add this user UID into Firestore as active: admins/{user.uid} or admin/{user.uid}.
-            </p>
+          <section className="mx-auto mt-10 w-full max-w-2xl rounded-[32px] border border-emerald-200/20 bg-[#092315]/85 p-6 shadow-lg shadow-emerald-900/20">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-rose-500/10 text-rose-300">
+                <ShieldCheck className="h-6 w-6" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-semibold text-emerald-100">Access denied</h2>
+                <p className="mt-1 text-sm text-emerald-200/80">
+                  Your user is signed in but not active for admin access.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-2xl border border-emerald-300/20 bg-[#0d3f28]/80 p-4 text-sm text-emerald-100">
+              Add this user UID into Firestore as active: <code className="rounded bg-[#0b3a1f]/80 px-1 py-0.5 text-emerald-200">admins/{user.uid}</code> or <code className="rounded bg-[#0b3a1f]/80 px-1 py-0.5 text-emerald-200">admin/{user.uid}</code>.
+            </div>
             <button
               type="button"
               onClick={() => auth && signOut(auth)}
-              className="mt-4 rounded-xl border border-rose-200/40 px-4 py-2 text-sm text-rose-100"
+              className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-emerald-200/20 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-100 transition hover:bg-emerald-500/25"
             >
+              <ArrowRight className="h-4 w-4" />
               Sign out
             </button>
           </section>
@@ -1005,97 +1085,118 @@ export default function AdminPage() {
             ) : null}
 
             <aside
-              className={`fixed inset-y-0 left-0 z-40 w-[86vw] max-w-[320px] overflow-y-auto border-r border-cyan-200/25 bg-[#0f2255]/95 p-3 backdrop-blur transition-transform duration-200 lg:static lg:w-auto lg:max-w-none lg:rounded-3xl lg:border lg:bg-[#0f2255]/75 ${
+              className={`fixed inset-y-0 left-0 z-40 w-[86vw] max-w-[320px] overflow-y-auto border-r border-slate-200/80 bg-violet-950/95 p-3 backdrop-blur transition-transform duration-200 lg:static lg:w-auto lg:max-w-none lg:rounded-3xl lg:border lg:bg-violet-950/90 ${
                 isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               }`}
             >
-              <div className="rounded-2xl border border-cyan-200/20 bg-[#132d68]/60 p-3">
-                <div className="flex items-center gap-2">
-                  <img
-                    src="/icons/astoria-logo.svg"
-                    alt="Astoria Palawan logo"
-                    className="h-10 w-10 rounded-md border border-cyan-200/30 bg-white/80 object-cover"
-                  />
+              <div className="rounded-[28px] border border-white/10 bg-white/10 p-4 shadow-2xl shadow-slate-950/10 backdrop-blur-lg">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-white/10 text-white shadow-inner shadow-black/10">
+                    <User className="h-6 w-6" />
+                  </div>
                   <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-100/70">Astoria Admin</p>
-                    <p className="mt-1 text-sm text-cyan-50/90">{user.email ?? 'Signed in admin'}</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-200">Astoria Admin</p>
+                    <p className="mt-1 text-sm text-white/90">{user.email ?? 'Signed in admin'}</p>
                   </div>
                 </div>
               </div>
 
-              <nav className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
-                {sections.map((section) => (
-                  <button
-                    key={section.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveSection(section.id);
-                      setIsSidebarOpen(false);
-                    }}
-                    className={`rounded-2xl border px-3 py-2 text-left transition ${
-                      activeSection === section.id
-                        ? 'border-cyan-300/70 bg-cyan-300/20 text-white'
-                        : 'border-cyan-200/20 bg-[#132d68]/50 text-cyan-100/85 hover:border-cyan-200/45'
-                    }`}
-                  >
-                    <p className="text-sm font-medium">{section.label}</p>
-                    <p className="text-[11px] text-cyan-100/70">{section.hint}</p>
-                  </button>
-                ))}
+              <nav className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                {sections.map((section) => {
+                  const Icon = sectionIcons[section.id];
+                  return (
+                    <button
+                      key={section.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveSection(section.id);
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`group flex items-center gap-3 rounded-3xl border px-4 py-3 text-left transition ${
+                        activeSection === section.id
+                          ? 'border-white/20 bg-white text-slate-900 shadow-[0_12px_28px_rgba(15,23,42,0.12)]'
+                          : 'border-transparent bg-violet-900/80 text-white/90 hover:border-white/10 hover:bg-violet-900'
+                      }`}
+                    >
+                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-100 transition group-hover:bg-emerald-500/20">
+                        <Icon className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold">{section.label}</p>
+                        <p className="text-xs text-emerald-200/70">{section.hint}</p>
+                      </div>
+                    </button>
+                  );
+                })}
               </nav>
 
-              <div className="mt-3 grid gap-2">
+              <div className="mt-3 grid gap-3">
                 <button
                   type="button"
                   onClick={saveContent}
                   disabled={isSaving}
-                  className="rounded-xl bg-cyan-400 px-3 py-2 text-sm font-semibold text-[#04204e] transition hover:bg-cyan-300 disabled:opacity-70"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-70"
                 >
+                  <Save className="h-4 w-4" />
                   {isSaving ? 'Saving...' : 'Save all changes'}
                 </button>
                 <button
                   type="button"
                   onClick={seedAllDataToFirebase}
                   disabled={isSeeding}
-                  className="rounded-xl border border-cyan-200/35 bg-[#0d2862]/75 px-3 py-2 text-sm text-cyan-100 transition hover:border-cyan-200/60 disabled:opacity-70"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200/35 bg-[#0c3d23]/75 px-4 py-3 text-sm text-emerald-100 transition hover:border-emerald-300/60 disabled:opacity-70"
                 >
+                  <UploadCloud className="h-4 w-4" />
                   {isSeeding ? 'Uploading all data...' : 'Upload all data to Firebase'}
                 </button>
                 <button
                   type="button"
                   onClick={() => auth && signOut(auth)}
-                  className="rounded-xl border border-cyan-200/35 px-3 py-2 text-sm text-cyan-100"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200/25 bg-[#0c3921]/80 px-4 py-3 text-sm text-emerald-100 transition hover:bg-[#0d4d2d]/95"
                 >
+                  <ArrowRight className="h-4 w-4" />
                   Sign out
                 </button>
               </div>
             </aside>
 
-            <section className="rounded-3xl border border-cyan-200/25 bg-[#0f2255]/75 p-4 backdrop-blur sm:p-5 lg:p-6">
+            <section className="rounded-3xl border border-slate-200/70 bg-slate-50 p-4 shadow-sm sm:p-5 lg:p-6">
               <div className="mb-3 lg:hidden">
                 <button
                   type="button"
                   onClick={() => setIsSidebarOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-cyan-200/35 bg-[#0d2862]/75 px-3 py-2 text-sm text-cyan-100"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-300/70 bg-white px-3 py-2 text-sm text-slate-700 transition hover:border-slate-400"
                 >
                   <span className="inline-flex h-3.5 w-4 flex-col justify-between" aria-hidden="true">
-                    <span className="block h-[2px] w-full rounded-full bg-cyan-100" />
-                    <span className="block h-[2px] w-full rounded-full bg-cyan-100" />
-                    <span className="block h-[2px] w-full rounded-full bg-cyan-100" />
+                    <span className="block h-[2px] w-full rounded-full bg-slate-700" />
+                    <span className="block h-[2px] w-full rounded-full bg-slate-700" />
+                    <span className="block h-[2px] w-full rounded-full bg-slate-700" />
                   </span>
                   Menu
                 </button>
               </div>
 
-              <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-200/20 bg-[#132d68]/50 p-3">
+              <header className="mb-4 flex flex-col gap-4 rounded-3xl bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h1 className="text-xl font-semibold sm:text-2xl">Admin Dashboard</h1>
-                  <p className="text-xs text-cyan-100/80 sm:text-sm">
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Admin Control Center</p>
+                  <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">Material Admin Dashboard</h1>
+                  <p className="mt-1 text-sm text-slate-500">
                     {now.toLocaleDateString()} • {now.toLocaleTimeString()}
                   </p>
                 </div>
-                <div className="rounded-xl border border-cyan-200/25 bg-[#0d2862]/70 px-3 py-2 text-xs text-cyan-100/90">
-                  Live metrics update as you edit data.
+                <div className="grid gap-2 sm:auto-cols-max sm:grid-flow-col">
+                  <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
+                    Live metrics update as you edit data
+                  </div>
+                  <button
+                    type="button"
+                    onClick={saveContent}
+                    disabled={isSaving}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-violet-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-600 disabled:opacity-70"
+                  >
+                    <Save className="h-4 w-4" />
+                    {isSaving ? 'Saving...' : 'Save changes'}
+                  </button>
                 </div>
               </header>
 
@@ -1108,18 +1209,28 @@ export default function AdminPage() {
               {activeSection === 'overview' ? (
                 <div className="mt-4 space-y-4">
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {metrics.map((metric) => (
-                      <article key={metric.label} className="rounded-2xl border border-cyan-200/20 bg-[#122b63]/65 p-3">
-                        <p className="text-xs uppercase tracking-[0.12em] text-cyan-100/65">{metric.label}</p>
-                        <p className="mt-2 text-2xl font-semibold text-cyan-100">{metric.value}</p>
-                        <p className="mt-1 text-[11px] text-cyan-100/70">{metric.detail}</p>
+                    {metrics.map((metric) => {
+                    const Icon = metric.icon;
+                    return (
+                      <article key={metric.label} className="rounded-[28px] border border-slate-200/70 bg-white p-5 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{metric.label}</p>
+                            <p className="mt-4 text-3xl font-semibold text-slate-900">{metric.value}</p>
+                          </div>
+                          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+                            <Icon className="h-5 w-5" />
+                          </span>
+                        </div>
+                        <p className="mt-3 text-sm text-slate-500">{metric.detail}</p>
                       </article>
-                    ))}
+                    );
+                  })}
                   </div>
 
                   <div className="grid gap-3 lg:grid-cols-2">
-                    <article className="rounded-2xl border border-cyan-200/20 bg-[#122b63]/65 p-4">
-                      <h2 className="text-base font-semibold">Carousel Preview</h2>
+                    <article className="rounded-[28px] border border-slate-200/70 bg-white p-4 shadow-sm">
+                      <h2 className="text-base font-semibold text-slate-900">Carousel Preview</h2>
                       <ul className="mt-3 space-y-2">
                         {form.imageSlides.slice(0, 4).map((slide, index) => (
                           <li key={`${slide.title}-${index}`} className="rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-2">
@@ -1130,8 +1241,8 @@ export default function AdminPage() {
                       </ul>
                     </article>
 
-                    <article className="rounded-2xl border border-cyan-200/20 bg-[#122b63]/65 p-4">
-                      <h2 className="text-base font-semibold">News Preview</h2>
+                    <article className="rounded-[28px] border border-slate-200/70 bg-white p-4 shadow-sm">
+                      <h2 className="text-base font-semibold text-slate-900">News Preview</h2>
                       <ul className="mt-3 space-y-2">
                         {form.newsSlides.slice(0, 4).map((news, index) => (
                           <li key={`${news.title}-${index}`} className="rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-2">
@@ -1547,326 +1658,6 @@ export default function AdminPage() {
                       </div>
                     </div>
 
-                    {useStructuredEditor ? (
-                      <div className="mt-3 rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-3">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <p className="text-xs text-cyan-100/70">
-                            Form editor for {dataCollectionLabels[selectedDataKey]} (auto-syncs to JSON below)
-                          </p>
-                          {selectedDataKey === 'faqs' ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateArrayCollection('faqs', (items) => [
-                                  ...items,
-                                  {
-                                    id: `faq-${Date.now()}`,
-                                    question: 'New question',
-                                    answer: 'New answer',
-                                  },
-                                ], 'FAQ item added.')
-                              }
-                              className="rounded-lg border border-cyan-200/35 px-2 py-1 text-[11px] text-cyan-100"
-                            >
-                              Add FAQ
-                            </button>
-                          ) : null}
-                          {selectedDataKey === 'resorts' ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateArrayCollection('resorts', (items) => [
-                                  ...items,
-                                  {
-                                    id: `resort-${Date.now()}`,
-                                    name: 'New resort',
-                                    location: 'Location',
-                                    description: 'Description',
-                                    amenities: [],
-                                    image: '/images/resort-palawan.jpg',
-                                  },
-                                ], 'Resort item added.')
-                              }
-                              className="rounded-lg border border-cyan-200/35 px-2 py-1 text-[11px] text-cyan-100"
-                            >
-                              Add Resort
-                            </button>
-                          ) : null}
-                          {selectedDataKey === 'services' ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateArrayCollection('services', (items) => [
-                                  ...items,
-                                  {
-                                    id: `service-${Date.now()}`,
-                                    title: 'New service',
-                                    description: 'Service description',
-                                    icon: 'Sparkles',
-                                  },
-                                ], 'Service item added.')
-                              }
-                              className="rounded-lg border border-cyan-200/35 px-2 py-1 text-[11px] text-cyan-100"
-                            >
-                              Add Service
-                            </button>
-                          ) : null}
-                        </div>
-
-                        {collectionHasInvalidJson ? (
-                          <p className="rounded-lg border border-rose-300/40 bg-[#3d1f4e]/70 px-2 py-2 text-xs text-rose-100">
-                            JSON is invalid. Please fix JSON first before using form editing.
-                          </p>
-                        ) : null}
-
-                        {selectedDataKey === 'faqs' && Array.isArray(parsedCollection) ? (
-                          <div className="space-y-2">
-                            {parsedCollection.filter(isObject).map((item, index) => (
-                              <article key={`faq-${index}`} className="rounded-xl border border-cyan-200/20 bg-[#102b66]/60 p-2">
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                  <input
-                                    className={fieldClassName}
-                                    value={typeof item.id === 'string' ? item.id : ''}
-                                    onChange={(event) =>
-                                      updateArrayCollection('faqs', (items) =>
-                                        items.map((entry, entryIndex) =>
-                                          entryIndex === index ? { ...entry, id: event.target.value } : entry
-                                        )
-                                      , 'FAQ updated.')
-                                    }
-                                    placeholder="FAQ id"
-                                  />
-                                  <input
-                                    className={fieldClassName}
-                                    value={typeof item.question === 'string' ? item.question : ''}
-                                    onChange={(event) =>
-                                      updateArrayCollection('faqs', (items) =>
-                                        items.map((entry, entryIndex) =>
-                                          entryIndex === index ? { ...entry, question: event.target.value } : entry
-                                        )
-                                      , 'FAQ updated.')
-                                    }
-                                    placeholder="Question"
-                                  />
-                                </div>
-                                <textarea
-                                  className={`${fieldClassName} mt-2`}
-                                  rows={3}
-                                  value={typeof item.answer === 'string' ? item.answer : ''}
-                                  onChange={(event) =>
-                                    updateArrayCollection('faqs', (items) =>
-                                      items.map((entry, entryIndex) =>
-                                        entryIndex === index ? { ...entry, answer: event.target.value } : entry
-                                      )
-                                    , 'FAQ updated.')
-                                  }
-                                  placeholder="Answer"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    updateArrayCollection(
-                                      'faqs',
-                                      (items) => items.filter((_, entryIndex) => entryIndex !== index),
-                                      'FAQ removed.'
-                                    )
-                                  }
-                                  className="mt-2 rounded-lg border border-rose-300/40 px-2 py-1 text-[11px] text-rose-100"
-                                >
-                                  Remove FAQ
-                                </button>
-                              </article>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        {selectedDataKey === 'resorts' && Array.isArray(parsedCollection) ? (
-                          <div className="space-y-2">
-                            {parsedCollection.filter(isObject).map((item, index) => {
-                              const amenityLines = Array.isArray(item.amenities)
-                                ? item.amenities.map((amenity) => String(amenity)).join('\n')
-                                : '';
-
-                              return (
-                                <article key={`resort-${index}`} className="rounded-xl border border-cyan-200/20 bg-[#102b66]/60 p-2">
-                                  <div className="grid gap-2 sm:grid-cols-2">
-                                    <input
-                                      className={fieldClassName}
-                                      value={typeof item.id === 'string' ? item.id : ''}
-                                      onChange={(event) =>
-                                        updateArrayCollection('resorts', (items) =>
-                                          items.map((entry, entryIndex) =>
-                                            entryIndex === index ? { ...entry, id: event.target.value } : entry
-                                          )
-                                        , 'Resort updated.')
-                                      }
-                                      placeholder="Resort id"
-                                    />
-                                    <input
-                                      className={fieldClassName}
-                                      value={typeof item.name === 'string' ? item.name : ''}
-                                      onChange={(event) =>
-                                        updateArrayCollection('resorts', (items) =>
-                                          items.map((entry, entryIndex) =>
-                                            entryIndex === index ? { ...entry, name: event.target.value } : entry
-                                          )
-                                        , 'Resort updated.')
-                                      }
-                                      placeholder="Resort name"
-                                    />
-                                    <input
-                                      className={fieldClassName}
-                                      value={typeof item.location === 'string' ? item.location : ''}
-                                      onChange={(event) =>
-                                        updateArrayCollection('resorts', (items) =>
-                                          items.map((entry, entryIndex) =>
-                                            entryIndex === index ? { ...entry, location: event.target.value } : entry
-                                          )
-                                        , 'Resort updated.')
-                                      }
-                                      placeholder="Location"
-                                    />
-                                    <input
-                                      className={fieldClassName}
-                                      value={typeof item.image === 'string' ? item.image : ''}
-                                      onChange={(event) =>
-                                        updateArrayCollection('resorts', (items) =>
-                                          items.map((entry, entryIndex) =>
-                                            entryIndex === index ? { ...entry, image: event.target.value } : entry
-                                          )
-                                        , 'Resort updated.')
-                                      }
-                                      placeholder="Image path"
-                                    />
-                                  </div>
-                                  <textarea
-                                    className={`${fieldClassName} mt-2`}
-                                    rows={3}
-                                    value={typeof item.description === 'string' ? item.description : ''}
-                                    onChange={(event) =>
-                                      updateArrayCollection('resorts', (items) =>
-                                        items.map((entry, entryIndex) =>
-                                          entryIndex === index ? { ...entry, description: event.target.value } : entry
-                                        )
-                                      , 'Resort updated.')
-                                    }
-                                    placeholder="Description"
-                                  />
-                                  <textarea
-                                    className={`${fieldClassName} mt-2`}
-                                    rows={4}
-                                    value={amenityLines}
-                                    onChange={(event) =>
-                                      updateArrayCollection('resorts', (items) =>
-                                        items.map((entry, entryIndex) =>
-                                          entryIndex === index
-                                            ? {
-                                                ...entry,
-                                                amenities: event.target.value
-                                                  .split('\n')
-                                                  .map((line) => line.trim())
-                                                  .filter((line) => line.length > 0),
-                                              }
-                                            : entry
-                                        )
-                                      , 'Resort updated.')
-                                    }
-                                    placeholder="Amenities (one per line)"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateArrayCollection(
-                                        'resorts',
-                                        (items) => items.filter((_, entryIndex) => entryIndex !== index),
-                                        'Resort removed.'
-                                      )
-                                    }
-                                    className="mt-2 rounded-lg border border-rose-300/40 px-2 py-1 text-[11px] text-rose-100"
-                                  >
-                                    Remove Resort
-                                  </button>
-                                </article>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-
-                        {selectedDataKey === 'services' && Array.isArray(parsedCollection) ? (
-                          <div className="space-y-2">
-                            {parsedCollection.filter(isObject).map((item, index) => (
-                              <article key={`service-${index}`} className="rounded-xl border border-cyan-200/20 bg-[#102b66]/60 p-2">
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                  <input
-                                    className={fieldClassName}
-                                    value={typeof item.id === 'string' ? item.id : ''}
-                                    onChange={(event) =>
-                                      updateArrayCollection('services', (items) =>
-                                        items.map((entry, entryIndex) =>
-                                          entryIndex === index ? { ...entry, id: event.target.value } : entry
-                                        )
-                                      , 'Service updated.')
-                                    }
-                                    placeholder="Service id"
-                                  />
-                                  <input
-                                    className={fieldClassName}
-                                    value={typeof item.title === 'string' ? item.title : ''}
-                                    onChange={(event) =>
-                                      updateArrayCollection('services', (items) =>
-                                        items.map((entry, entryIndex) =>
-                                          entryIndex === index ? { ...entry, title: event.target.value } : entry
-                                        )
-                                      , 'Service updated.')
-                                    }
-                                    placeholder="Service title"
-                                  />
-                                  <input
-                                    className={fieldClassName}
-                                    value={typeof item.icon === 'string' ? item.icon : ''}
-                                    onChange={(event) =>
-                                      updateArrayCollection('services', (items) =>
-                                        items.map((entry, entryIndex) =>
-                                          entryIndex === index ? { ...entry, icon: event.target.value } : entry
-                                        )
-                                      , 'Service updated.')
-                                    }
-                                    placeholder="Icon name"
-                                  />
-                                </div>
-                                <textarea
-                                  className={`${fieldClassName} mt-2`}
-                                  rows={3}
-                                  value={typeof item.description === 'string' ? item.description : ''}
-                                  onChange={(event) =>
-                                    updateArrayCollection('services', (items) =>
-                                      items.map((entry, entryIndex) =>
-                                        entryIndex === index ? { ...entry, description: event.target.value } : entry
-                                      )
-                                    , 'Service updated.')
-                                  }
-                                  placeholder="Service description"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    updateArrayCollection(
-                                      'services',
-                                      (items) => items.filter((_, entryIndex) => entryIndex !== index),
-                                      'Service removed.'
-                                    )
-                                  }
-                                  className="mt-2 rounded-lg border border-rose-300/40 px-2 py-1 text-[11px] text-rose-100"
-                                >
-                                  Remove Service
-                                </button>
-                              </article>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-
                     <div className="mt-3 rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-2">
                       <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-cyan-200/30 bg-[#0f2a5a]/70 px-2.5 py-1.5">
                         <div className="flex items-center gap-2">
@@ -1887,6 +1678,11 @@ export default function AdminPage() {
                         placeholder="JSON data will appear here..."
                         spellCheck={false}
                       />
+                      {(selectedDataKey === 'faqs' || selectedDataKey === 'chatResponses') ? (
+                        <p className="mt-2 rounded-lg border border-amber-300/35 bg-[#47361a]/65 px-2 py-1.5 text-[11px] text-amber-100/90">
+                          Tip: update check-in/check-out and operational times in Hotel Settings for the chatbot to use the latest values.
+                        </p>
+                      ) : null}
                     </div>
 
                     {dataStatus ? (
