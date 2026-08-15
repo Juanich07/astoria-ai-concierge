@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
+import { getAuth, type Auth } from 'firebase/auth';
+import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getStorage, type FirebaseStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -26,9 +26,9 @@ const isFirebaseConfigured =
   typeof firebaseConfig.appId === 'string' &&
   firebaseConfig.appId.length > 0;
 
-let db: ReturnType<typeof getFirestore> | null = null;
-let auth: ReturnType<typeof getAuth> | null = null;
-let storage: ReturnType<typeof getStorage> | null = null;
+let db: Firestore | null = null;
+let auth: Auth | null = null;
+let storage: FirebaseStorage | null = null;
 
 if (isFirebaseConfigured) {
   const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();

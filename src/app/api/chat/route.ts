@@ -50,13 +50,14 @@ type ContentMode = 'auto' | 'firebase' | 'local';
 const KNOWLEDGE_CACHE_TTL_MS = 60_000;
 const GROQ_CONNECTIVITY_TTL_MS = 30_000;
 const FIREBASE_FETCH_TIMEOUT_MS = 2_000;
-const FIREBASE_FAILURE_BACKOFF_MS = 60_000;
+const FIREBASE_FAILURE_BACKOFF_MS = 300_000;
 const CONTENT_MODE_CACHE_TTL_MS = 30_000;
-const FIREBASE_CONTENT_ENABLED = process.env.ENABLE_FIREBASE_CONTENT !== 'false';
+const FIREBASE_CONTENT_ENABLED = process.env.ENABLE_FIREBASE_CONTENT === 'true';
+const firebaseServerReady = FIREBASE_CONTENT_ENABLED && !!serverDb && isFirebaseServerConfigured;
 
-type ConnectivityCache = {
-  reachable: boolean;
-  checkedAt: number;
+const isFirebaseAccessError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return /permission|unauthenticated|forbidden|insufficient permissions|missing or insufficient|not allowed|permission_denied|failed with error: undefined|rpc_error|http error has no status/i.test(message);
 };
 
 type CachedKnowledge = {
@@ -79,7 +80,6 @@ type FirebaseHealthState = {
 
 let cachedKnowledge: CachedKnowledge | null = null;
 let inFlightKnowledgeLoad: Promise<CachedKnowledge> | null = null;
-let cachedGroqConnectivity: ConnectivityCache | null = null;
 let firebaseRetryAt = 0;
 let manualContentMode: ContentMode = 'auto';
 let cachedModeFromDb: ModeCache | null = null;
@@ -137,9 +137,13 @@ const updateFirebaseHealth = (status: FirebaseHealthState['status']) => {
 
 const getEffectiveMode = async (): Promise<ContentMode> => {
   if (manualContentMode !== 'auto') return manualContentMode;
-  if (!FIREBASE_CONTENT_ENABLED || !serverDb || !isFirebaseServerConfigured) return 'local';
+  if (!firebaseServerReady) return 'local';
 
   const now = Date.now();
+  if (now < firebaseRetryAt) {
+    return 'local';
+  }
+
   if (cachedModeFromDb && cachedModeFromDb.expiresAt > now) {
     return cachedModeFromDb.mode;
   }
@@ -225,7 +229,7 @@ const readDocData = async (
     return null;
   }
 
-  if (!FIREBASE_CONTENT_ENABLED || !serverDb || !isFirebaseServerConfigured) {
+  if (!firebaseServerReady) {
     updateFirebaseHealth('skipped');
     return null;
   }
@@ -245,8 +249,13 @@ const readDocData = async (
     firebaseRetryAt = 0;
     updateFirebaseHealth('healthy');
     return isObject(data) ? data : null;
-  } catch {
+  } catch (error) {
     firebaseRetryAt = Date.now() + FIREBASE_FAILURE_BACKOFF_MS;
+    if (manualContentMode === 'auto' && isFirebaseAccessError(error)) {
+      manualContentMode = 'local';
+      cachedKnowledge = null;
+      inFlightKnowledgeLoad = null;
+    }
     updateFirebaseHealth('unhealthy');
     return null;
   }
@@ -254,33 +263,7 @@ const readDocData = async (
 
 const isGroqReachable = async (): Promise<boolean> => {
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return false;
-
-  const now = Date.now();
-  if (cachedGroqConnectivity && now - cachedGroqConnectivity.checkedAt < GROQ_CONNECTIVITY_TTL_MS) {
-    return cachedGroqConnectivity.reachable;
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2_500);
-
-    const response = await fetch('https://api.groq.com/openai/v1/models', {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${apiKey}` },
-      cache: 'no-store',
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    const reachable = response.ok || response.status === 401 || response.status === 403;
-    cachedGroqConnectivity = { reachable, checkedAt: now };
-    return reachable;
-  } catch {
-    cachedGroqConnectivity = { reachable: false, checkedAt: now };
-    return false;
-  }
+  return typeof apiKey === 'string' && apiKey.trim().length > 0;
 };
 
 const resolveModel = async () => {

@@ -10,19 +10,25 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-export const isFirebaseServerConfigured =
+const hasPlaceholderValue = (value: string | undefined) =>
+  typeof value !== 'string' || value.trim().length === 0 || /your_|example|placeholder|replace-me/i.test(value);
+
+const firebaseEnvConfigured =
   typeof firebaseConfig.apiKey === 'string' &&
-  firebaseConfig.apiKey.length > 0 &&
+  !hasPlaceholderValue(firebaseConfig.apiKey) &&
   typeof firebaseConfig.authDomain === 'string' &&
-  firebaseConfig.authDomain.length > 0 &&
+  !hasPlaceholderValue(firebaseConfig.authDomain) &&
   typeof firebaseConfig.projectId === 'string' &&
-  firebaseConfig.projectId.length > 0 &&
+  !hasPlaceholderValue(firebaseConfig.projectId) &&
   typeof firebaseConfig.storageBucket === 'string' &&
-  firebaseConfig.storageBucket.length > 0 &&
+  !hasPlaceholderValue(firebaseConfig.storageBucket) &&
   typeof firebaseConfig.messagingSenderId === 'string' &&
-  firebaseConfig.messagingSenderId.length > 0 &&
+  !hasPlaceholderValue(firebaseConfig.messagingSenderId) &&
   typeof firebaseConfig.appId === 'string' &&
-  firebaseConfig.appId.length > 0;
+  !hasPlaceholderValue(firebaseConfig.appId);
+
+export const isFirebaseServerConfigured =
+  process.env.ENABLE_FIREBASE_CONTENT === 'true' && firebaseEnvConfigured;
 
 let serverDb: Firestore | null = null;
 

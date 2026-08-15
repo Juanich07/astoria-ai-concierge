@@ -6,6 +6,20 @@ import { doc, getDoc } from 'firebase/firestore';
 import { defaultLandingContent, normalizeLandingPageContent } from '@/data/landingContent';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
 
+const LANDING_PAGE_STORAGE_KEY = 'astoria-landing-page-content';
+
+const readStoredLandingContent = () => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(LANDING_PAGE_STORAGE_KEY);
+    if (!raw) return null;
+    return normalizeLandingPageContent(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+};
+
 export default function LandingPage() {
   const openChatWidget = () => {
     window.dispatchEvent(new CustomEvent('open-chat-widget'));
@@ -16,6 +30,13 @@ export default function LandingPage() {
   const [content, setContent] = useState(defaultLandingContent);
 
   useEffect(() => {
+    const stored = readStoredLandingContent();
+    if (stored) {
+      setContent(stored);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!isFirebaseConfigured || !db) return;
 
     let isMounted = true;
@@ -24,8 +45,15 @@ export default function LandingPage() {
       try {
         const snapshot = await getDoc(doc(db, 'siteContent', 'landingPage'));
         if (!snapshot.exists() || !isMounted) return;
-        setContent(normalizeLandingPageContent(snapshot.data()));
+        const nextContent = normalizeLandingPageContent(snapshot.data());
+        setContent(nextContent);
+        window.localStorage.setItem(LANDING_PAGE_STORAGE_KEY, JSON.stringify(nextContent));
       } catch {
+        const stored = readStoredLandingContent();
+        if (stored) {
+          setContent(stored);
+          return;
+        }
         setContent(defaultLandingContent);
       }
     };

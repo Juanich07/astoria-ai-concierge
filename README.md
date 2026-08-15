@@ -77,9 +77,10 @@ Required for Firestore save button:
 
 Optional for server-side content sync from Firestore in `POST /api/chat`:
 
-- `ENABLE_FIREBASE_CONTENT=false` to force local-only content
+- `ENABLE_FIREBASE_CONTENT=true` to enable Firestore-backed content reads
+- `ENABLE_FIREBASE_CONTENT=false` to force local-only content and avoid failed Firestore lookups
 
-If this flag is omitted, the API route will try Firestore reads when Firebase is configured and fall back to local data if the read fails.
+The app automatically falls back to local-only content after permission or network failures, so a blocked Firestore read will not keep re-triggering the database. The default remains local-only mode for reliability. Enable Firestore only when the project is reachable and rules allow the server to read the content collections.
 
 ## NPM Scripts
 

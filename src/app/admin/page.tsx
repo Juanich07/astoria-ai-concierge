@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { defaultLandingContent, normalizeLandingPageContent, type LandingPageContent } from '@/data/landingContent';
@@ -249,14 +249,28 @@ const getPayloadFromSnapshot = (key: EditableDataKey, raw: Record<string, unknow
     }
     case 'settings': {
       const defaults = defaultSettings;
-      const merged: Partial<HotelSettings> = {};
+      const merged: Partial<HotelSettings> = { ...defaults };
 
       for (const [key, value] of Object.entries(defaults)) {
         const rawValue = raw[key];
-        if (typeof rawValue === typeof value && rawValue !== null) {
-          merged[key as keyof HotelSettings] = rawValue as any;
-        } else {
-          merged[key as keyof HotelSettings] = value;
+        const typedKey = key as keyof HotelSettings;
+
+        if (rawValue === undefined || rawValue === null) {
+          continue;
+        }
+
+        if (typedKey === 'frontDeskLocations' && Array.isArray(rawValue)) {
+          merged.frontDeskLocations = rawValue as string[];
+          continue;
+        }
+
+        if (typedKey === 'wifiDeviceLimit' && typeof rawValue === 'number') {
+          merged.wifiDeviceLimit = rawValue;
+          continue;
+        }
+
+        if (typeof rawValue === typeof value) {
+          (merged as Record<string, unknown>)[typedKey] = rawValue as HotelSettings[keyof HotelSettings];
         }
       }
 
@@ -366,7 +380,7 @@ const textFields: Array<{ key: TextFieldKey; label: string; placeholder: string 
 export default function AdminPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -409,7 +423,7 @@ export default function AdminPage() {
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, async (nextUser) => {
+    const unsubscribe = onAuthStateChanged(auth!, async (nextUser) => {
       setUser(nextUser);
       setContentStatus('');
       setProfileStatus('');
@@ -422,8 +436,8 @@ export default function AdminPage() {
 
       try {
         const [adminsSnap, adminSnap] = await Promise.all([
-          getDoc(doc(db, 'admins', nextUser.uid)),
-          getDoc(doc(db, 'admin', nextUser.uid)),
+          getDoc(doc(db!, 'admins', nextUser.uid)),
+          getDoc(doc(db!, 'admin', nextUser.uid)),
         ]);
 
         const isAdminsDoc = adminsSnap.exists();
@@ -441,11 +455,14 @@ export default function AdminPage() {
             photoUrl: typeof data.photoUrl === 'string' ? data.photoUrl : nextUser.photoURL ?? '',
           });
 
-          const contentSnap = await getDoc(doc(db, 'siteContent', 'landingPage'));
+          const contentSnap = await getDoc(doc(db!, 'siteContent', 'landingPage'));
           if (contentSnap.exists()) {
-            setForm(normalizeLandingPageContent(contentSnap.data()));
+            const normalizedContent = normalizeLandingPageContent(contentSnap.data());
+            setForm(normalizedContent);
+            window.localStorage.setItem('astoria-landing-page-content', JSON.stringify(normalizedContent));
           } else {
             setForm(defaultLandingContent);
+            window.localStorage.setItem('astoria-landing-page-content', JSON.stringify(defaultLandingContent));
           }
         }
       } catch (error) {
@@ -487,7 +504,7 @@ export default function AdminPage() {
       setDataStatus('');
 
       const ref = getCollectionRef(key);
-      const snapshot = await getDoc(doc(db, ref.collectionName, ref.docId));
+      const snapshot = await getDoc(doc(db!, ref.collectionName, ref.docId));
       const raw = snapshot.exists() && isObject(snapshot.data()) ? snapshot.data() : null;
       const payload = getPayloadFromSnapshot(key, raw);
       setDataJson(toPrettyJson(payload));
@@ -536,7 +553,7 @@ export default function AdminPage() {
       const ref = getCollectionRef(selectedDataKey);
       const payload = buildSavePayload(selectedDataKey, parsed, user.uid);
 
-      await setDoc(doc(db, ref.collectionName, ref.docId), payload, { merge: true });
+      await setDoc(doc(db!, ref.collectionName, ref.docId), payload, { merge: true });
       await refreshChatbotKnowledge();
       setDataStatus(`${dataCollectionLabels[selectedDataKey]} saved successfully.`);
     } catch (error) {
@@ -666,7 +683,7 @@ export default function AdminPage() {
 
     try {
       setContentStatus('');
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      await signInWithEmailAndPassword(auth!, email.trim(), password);
     } catch (error) {
       setContentStatus(getReadableAuthError(error, 'Sign-in failed.'));
     }
@@ -681,7 +698,7 @@ export default function AdminPage() {
 
       const payload = normalizeLandingPageContent(form);
       await setDoc(
-        doc(db, 'siteContent', 'landingPage'),
+        doc(db!, 'siteContent', 'landingPage'),
         {
           ...payload,
           updatedAt: serverTimestamp(),
@@ -691,6 +708,7 @@ export default function AdminPage() {
       );
 
       setForm(payload);
+      window.localStorage.setItem('astoria-landing-page-content', JSON.stringify(payload));
       setContentStatus('Changes saved successfully.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Save failed.';
@@ -708,7 +726,7 @@ export default function AdminPage() {
       setProfileStatus('');
 
       await setDoc(
-        doc(db, adminCollection, user.uid),
+        doc(db!, adminCollection, user.uid),
         {
           displayName: profile.displayName.trim(),
           idNumber: profile.idNumber.trim(),
@@ -736,10 +754,10 @@ export default function AdminPage() {
       setContentStatus('');
 
       const normalizedLanding = normalizeLandingPageContent(form);
-      const batch = writeBatch(db);
+      const batch = writeBatch(db!);
 
       batch.set(
-        doc(db, 'siteContent', 'landingPage'),
+        doc(db!, 'siteContent', 'landingPage'),
         {
           ...normalizedLanding,
           updatedAt: serverTimestamp(),
@@ -749,7 +767,7 @@ export default function AdminPage() {
       );
 
       batch.set(
-        doc(db, 'siteContent', 'chatResponses'),
+        doc(db!, 'siteContent', 'chatResponses'),
         {
           ...chatResponses,
           updatedAt: serverTimestamp(),
@@ -759,7 +777,7 @@ export default function AdminPage() {
       );
 
       batch.set(
-        doc(db, 'siteContent', 'knowledge'),
+        doc(db!, 'siteContent', 'knowledge'),
         {
           intentSections: intentKnowledgeSections,
           fullText: extendedKnowledge,
@@ -770,7 +788,7 @@ export default function AdminPage() {
       );
 
       batch.set(
-        doc(db, 'contentData', 'faqs'),
+        doc(db!, 'contentData', 'faqs'),
         {
           items: faqs,
           updatedAt: serverTimestamp(),
@@ -780,7 +798,7 @@ export default function AdminPage() {
       );
 
       batch.set(
-        doc(db, 'contentData', 'resorts'),
+        doc(db!, 'contentData', 'resorts'),
         {
           items: resorts,
           updatedAt: serverTimestamp(),
@@ -790,7 +808,7 @@ export default function AdminPage() {
       );
 
       batch.set(
-        doc(db, 'contentData', 'services'),
+        doc(db!, 'contentData', 'services'),
         {
           items: services,
           updatedAt: serverTimestamp(),
@@ -800,7 +818,7 @@ export default function AdminPage() {
       );
 
       batch.set(
-        doc(db, 'contentData', 'tours'),
+        doc(db!, 'contentData', 'tours'),
         {
           packages: tourPackages,
           sharedGroupTours,
@@ -812,7 +830,7 @@ export default function AdminPage() {
       );
 
       batch.set(
-        doc(db, 'contentData', 'suggestedQuestions'),
+        doc(db!, 'contentData', 'suggestedQuestions'),
         {
           items: suggestedQuestions,
           updatedAt: serverTimestamp(),
@@ -822,7 +840,7 @@ export default function AdminPage() {
       );
 
       batch.set(
-        doc(db, 'contentData', 'testimonials'),
+        doc(db!, 'contentData', 'testimonials'),
         {
           items: testimonials,
           updatedAt: serverTimestamp(),
@@ -853,6 +871,7 @@ export default function AdminPage() {
       await batch.commit();
       await refreshChatbotKnowledge();
       setForm(normalizedLanding);
+      window.localStorage.setItem('astoria-landing-page-content', JSON.stringify(normalizedLanding));
       setContentStatus('All data has been uploaded to Firebase successfully.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Seeding all data failed.';
@@ -947,7 +966,7 @@ export default function AdminPage() {
 
       const extension = file.name.split('.').pop() ?? 'jpg';
       const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
-      const imageRef = storageRef(storage, `admin/carousel/${user.uid}/${uniqueName}`);
+      const imageRef = storageRef(storage!, `admin/carousel/${user.uid}/${uniqueName}`);
 
       await uploadBytes(imageRef, file);
       const imageUrl = await getDownloadURL(imageRef);
@@ -1096,7 +1115,7 @@ export default function AdminPage() {
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-[0.2em] text-slate-200">Astoria Admin</p>
-                    <p className="mt-1 text-sm text-white/90">{user.email ?? 'Signed in admin'}</p>
+                    <p className="mt-1 text-sm text-white/90">{user?.email ?? 'Signed in admin'}</p>
                   </div>
                 </div>
               </div>
@@ -1328,6 +1347,21 @@ export default function AdminPage() {
                         <p className="text-[11px] text-cyan-100/75">Select an image file to auto-fill the Image URL.</p>
                       </div>
 
+                      <div className="mt-3 overflow-hidden rounded-xl border border-cyan-200/20 bg-slate-900/20">
+                        <div className="flex items-center justify-between border-b border-cyan-200/20 bg-[#0d2862]/70 px-2 py-1.5 text-[10px] uppercase tracking-[0.2em] text-cyan-100/80">
+                          <span>Preview</span>
+                          <span>{slide.imageUrl ? 'Active image' : 'No image yet'}</span>
+                        </div>
+                        <img
+                          src={slide.imageUrl || '/icons/astoria-bg.webp'}
+                          alt={slide.title || 'Carousel slide preview'}
+                          className="h-36 w-full object-cover"
+                          onError={(event) => {
+                            event.currentTarget.src = '/icons/astoria-bg.webp';
+                          }}
+                        />
+                      </div>
+
                       {form.imageSlides.length > 1 ? (
                         <button
                           type="button"
@@ -1475,6 +1509,20 @@ export default function AdminPage() {
                                 value={slide.focus}
                                 onChange={(event) => updateImageSlide(index, 'focus', event.target.value)}
                                 placeholder="Focus"
+                              />
+                            </div>
+                            <div className="mt-2 overflow-hidden rounded-xl border border-cyan-200/20 bg-slate-900/20">
+                              <div className="flex items-center justify-between border-b border-cyan-200/20 bg-[#0d2862]/70 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-cyan-100/80">
+                                <span>Preview</span>
+                                <span>{slide.imageUrl ? 'Active image' : 'No image yet'}</span>
+                              </div>
+                              <img
+                                src={slide.imageUrl || '/icons/astoria-bg.webp'}
+                                alt={slide.title || 'Carousel slide preview'}
+                                className="h-28 w-full object-cover"
+                                onError={(event) => {
+                                  event.currentTarget.src = '/icons/astoria-bg.webp';
+                                }}
                               />
                             </div>
                             {form.imageSlides.length > 1 ? (
