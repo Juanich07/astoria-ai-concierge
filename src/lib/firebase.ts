@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getFirestore, setLogLevel, type Firestore } from 'firebase/firestore';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -12,19 +12,24 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+const hasPlaceholderValue = (value: string | undefined) =>
+  typeof value !== 'string' || value.trim().length === 0 || /your_|example|placeholder|replace-me/i.test(value);
+
 const isFirebaseConfigured =
   typeof firebaseConfig.apiKey === 'string' &&
-  firebaseConfig.apiKey.length > 0 &&
+  !hasPlaceholderValue(firebaseConfig.apiKey) &&
   typeof firebaseConfig.authDomain === 'string' &&
-  firebaseConfig.authDomain.length > 0 &&
+  !hasPlaceholderValue(firebaseConfig.authDomain) &&
   typeof firebaseConfig.projectId === 'string' &&
-  firebaseConfig.projectId.length > 0 &&
+  !hasPlaceholderValue(firebaseConfig.projectId) &&
   typeof firebaseConfig.storageBucket === 'string' &&
-  firebaseConfig.storageBucket.length > 0 &&
+  !hasPlaceholderValue(firebaseConfig.storageBucket) &&
   typeof firebaseConfig.messagingSenderId === 'string' &&
-  firebaseConfig.messagingSenderId.length > 0 &&
+  !hasPlaceholderValue(firebaseConfig.messagingSenderId) &&
   typeof firebaseConfig.appId === 'string' &&
-  firebaseConfig.appId.length > 0;
+  !hasPlaceholderValue(firebaseConfig.appId);
+
+setLogLevel('error');
 
 let db: Firestore | null = null;
 let auth: Auth | null = null;

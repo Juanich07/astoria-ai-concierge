@@ -1,5 +1,5 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
-import { getFirestore, type Firestore } from 'firebase/firestore/lite';
+import { getFirestore, setLogLevel, type Firestore } from 'firebase/firestore/lite';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -26,6 +26,8 @@ const firebaseEnvConfigured =
   !hasPlaceholderValue(firebaseConfig.messagingSenderId) &&
   typeof firebaseConfig.appId === 'string' &&
   !hasPlaceholderValue(firebaseConfig.appId);
+
+setLogLevel('error');
 
 export const isFirebaseServerConfigured =
   process.env.ENABLE_FIREBASE_CONTENT === 'true' && firebaseEnvConfigured;

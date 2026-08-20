@@ -268,7 +268,7 @@ const isGroqReachable = async (): Promise<boolean> => {
 
 const resolveModel = async () => {
   if (await isGroqReachable()) {
-    return groq('llama-3.1-8b-instant');
+    return groq(process.env.GROQ_MODEL || 'llama-3.3-70b-versatile');
   }
 
   if (process.env.OPENAI_API_KEY) {
