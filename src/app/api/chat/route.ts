@@ -49,6 +49,7 @@ type ContentMode = 'auto' | 'firebase' | 'local';
 
 const KNOWLEDGE_CACHE_TTL_MS = 60_000;
 const GROQ_CONNECTIVITY_TTL_MS = 30_000;
+const GROQ_HEALTH_TTL_MS = 60_000;
 const FIREBASE_FETCH_TIMEOUT_MS = 2_000;
 const FIREBASE_FAILURE_BACKOFF_MS = 300_000;
 const CONTENT_MODE_CACHE_TTL_MS = 30_000;
@@ -78,6 +79,22 @@ type FirebaseHealthState = {
   lastFailureAt: number | null;
 };
 
+type GroqHealthState = {
+  status: 'unknown' | 'healthy' | 'unhealthy' | 'skipped';
+  lastCheckedAt: number | null;
+  model: string | null;
+  message: string | null;
+};
+
+type UsageTelemetry = {
+  requestTimestamps: number[];
+  errorTimestamps: number[];
+  rateLimitTimestamps: number[];
+  lastErrorMessage: string | null;
+  lastErrorAt: number | null;
+  lastProvider: 'groq' | 'openai' | 'google' | 'none';
+};
+
 let cachedKnowledge: CachedKnowledge | null = null;
 let inFlightKnowledgeLoad: Promise<CachedKnowledge> | null = null;
 let firebaseRetryAt = 0;
@@ -88,6 +105,15 @@ let firebaseHealth: FirebaseHealthState = {
   lastCheckedAt: null,
   lastSuccessAt: null,
   lastFailureAt: null,
+};
+let cachedGroqHealth: { state: GroqHealthState; expiresAt: number } | null = null;
+let usageTelemetry: UsageTelemetry = {
+  requestTimestamps: [],
+  errorTimestamps: [],
+  rateLimitTimestamps: [],
+  lastErrorMessage: null,
+  lastErrorAt: null,
+  lastProvider: 'none',
 };
 
 const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
@@ -264,6 +290,113 @@ const readDocData = async (
 const isGroqReachable = async (): Promise<boolean> => {
   const apiKey = process.env.GROQ_API_KEY;
   return typeof apiKey === 'string' && apiKey.trim().length > 0;
+};
+
+const pruneRecent = (timestamps: number[], now: number, windowMs: number) =>
+  timestamps.filter((timestamp) => now - timestamp <= windowMs);
+
+const detectProvider = (): UsageTelemetry['lastProvider'] => {
+  if (process.env.GROQ_API_KEY) return 'groq';
+  if (process.env.OPENAI_API_KEY) return 'openai';
+  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) return 'google';
+  return 'none';
+};
+
+const trackChatRequest = () => {
+  const now = Date.now();
+  usageTelemetry.requestTimestamps = pruneRecent([...usageTelemetry.requestTimestamps, now], now, 60_000);
+  usageTelemetry.errorTimestamps = pruneRecent(usageTelemetry.errorTimestamps, now, 60_000);
+  usageTelemetry.rateLimitTimestamps = pruneRecent(usageTelemetry.rateLimitTimestamps, now, 60_000);
+  usageTelemetry.lastProvider = detectProvider();
+};
+
+const trackChatError = (error: unknown) => {
+  const now = Date.now();
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown AI error';
+  const lowered = message.toLowerCase();
+  const rateLimited = /429|rate\s*limit|too\s*many\s*requests|quota/i.test(lowered);
+
+  usageTelemetry.errorTimestamps = pruneRecent([...usageTelemetry.errorTimestamps, now], now, 60_000);
+  usageTelemetry.rateLimitTimestamps = rateLimited
+    ? pruneRecent([...usageTelemetry.rateLimitTimestamps, now], now, 60_000)
+    : pruneRecent(usageTelemetry.rateLimitTimestamps, now, 60_000);
+  usageTelemetry.lastErrorMessage = message;
+  usageTelemetry.lastErrorAt = now;
+};
+
+const getGroqHealth = async (): Promise<GroqHealthState> => {
+  const apiKey = process.env.GROQ_API_KEY?.trim();
+  const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  const now = Date.now();
+
+  if (!apiKey) {
+    return {
+      status: 'skipped',
+      lastCheckedAt: now,
+      model,
+      message: 'GROQ_API_KEY is not configured.',
+    };
+  }
+
+  if (cachedGroqHealth && cachedGroqHealth.expiresAt > now && cachedGroqHealth.state.model === model) {
+    return cachedGroqHealth.state;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4_000);
+    const response = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const next: GroqHealthState = {
+        status: 'unhealthy',
+        lastCheckedAt: now,
+        model,
+        message: `Groq API returned ${response.status}.`,
+      };
+      cachedGroqHealth = { state: next, expiresAt: now + GROQ_HEALTH_TTL_MS };
+      return next;
+    }
+
+    const payload = (await response.json()) as { data?: Array<{ id?: string }> };
+    const modelIds = Array.isArray(payload.data)
+      ? payload.data.map((item) => item.id).filter((id): id is string => typeof id === 'string')
+      : [];
+    const hasSelectedModel = modelIds.includes(model);
+
+    const next: GroqHealthState = hasSelectedModel
+      ? {
+          status: 'healthy',
+          lastCheckedAt: now,
+          model,
+          message: null,
+        }
+      : {
+          status: 'unhealthy',
+          lastCheckedAt: now,
+          model,
+          message: `Model ${model} is not available for this API key.`,
+        };
+
+    cachedGroqHealth = { state: next, expiresAt: now + GROQ_HEALTH_TTL_MS };
+    return next;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Groq health check failed.';
+    const next: GroqHealthState = {
+      status: 'unhealthy',
+      lastCheckedAt: now,
+      model,
+      message,
+    };
+    cachedGroqHealth = { state: next, expiresAt: now + GROQ_HEALTH_TTL_MS };
+    return next;
+  }
 };
 
 const resolveModel = async () => {
@@ -490,6 +623,10 @@ export async function POST(request: NextRequest) {
   if (isObject(body) && body.action === 'status') {
     const mode = await getEffectiveMode();
     const now = Date.now();
+    const groqHealth = await getGroqHealth();
+    usageTelemetry.requestTimestamps = pruneRecent(usageTelemetry.requestTimestamps, now, 60_000);
+    usageTelemetry.errorTimestamps = pruneRecent(usageTelemetry.errorTimestamps, now, 60_000);
+    usageTelemetry.rateLimitTimestamps = pruneRecent(usageTelemetry.rateLimitTimestamps, now, 60_000);
     return Response.json({
       ok: true,
       contentMode: mode,
@@ -497,10 +634,19 @@ export async function POST(request: NextRequest) {
       firebaseContentEnabled: FIREBASE_CONTENT_ENABLED,
       firebaseConfigured: !!serverDb && isFirebaseServerConfigured,
       firebaseHealth,
+      groqHealth,
       firebaseBackoffActive: now < firebaseRetryAt,
       firebaseRetryAt: firebaseRetryAt || null,
       cacheExpiresAt: cachedKnowledge?.expiresAt ?? null,
       cacheMode: cachedKnowledge?.mode ?? null,
+      usage: {
+        requestsLastMinute: usageTelemetry.requestTimestamps.length,
+        errorsLastMinute: usageTelemetry.errorTimestamps.length,
+        rateLimitHitsLastMinute: usageTelemetry.rateLimitTimestamps.length,
+        lastErrorMessage: usageTelemetry.lastErrorMessage,
+        lastErrorAt: usageTelemetry.lastErrorAt,
+        provider: usageTelemetry.lastProvider,
+      },
     });
   }
 
@@ -527,10 +673,12 @@ export async function POST(request: NextRequest) {
   }
 
   const messages = Array.isArray(body.messages) ? body.messages : [];
+  trackChatRequest();
   const { knowledge } = await getCachedKnowledge();
   const model = await resolveModel();
 
   if (!model) {
+    trackChatError('No reachable AI provider is configured.');
     return Response.json(
       {
         error:
@@ -567,7 +715,9 @@ export async function POST(request: NextRequest) {
   });
 
   return result.toUIMessageStreamResponse({
-    onError: () =>
-      "I'm having trouble connecting to our AI service right now. Please dial 0 for Front Desk.",
+    onError: (error) => {
+      trackChatError(error);
+      return "I'm having trouble connecting to our AI service right now. Please dial 0 for Front Desk.";
+    },
   });
 }

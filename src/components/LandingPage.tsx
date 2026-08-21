@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
+import { MessageCircle } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { defaultLandingContent, normalizeLandingPageContent } from '@/data/landingContent';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
@@ -160,12 +161,15 @@ export default function LandingPage() {
           <button
             type="button"
             onClick={openChatWidget}
-            className="col-span-1 min-h-[146px] rounded-[24px] bg-[linear-gradient(135deg,_#12aa9b_0%,_#25bea2_100%)] p-4 text-left text-white shadow-[0_18px_40px_rgba(0,0,0,0.26)] sm:min-h-[160px]"
+            className="relative col-span-1 min-h-[146px] rounded-[24px] bg-[linear-gradient(135deg,_#12aa9b_0%,_#25bea2_100%)] p-4 text-left text-white shadow-[0_18px_40px_rgba(0,0,0,0.26)] sm:min-h-[160px]"
           >
             <div className="text-[10px] font-medium uppercase tracking-[0.22em] text-emerald-50/90">
               {content.chatbotLabel}
             </div>
-            <div className="mt-10">
+            <span className="absolute right-4 top-4 inline-flex h-16 w-16 items-center justify-center rounded-full border border-white/30 bg-white/18 shadow-[0_8px_20px_rgba(0,0,0,0.15)]">
+              <MessageCircle className="h-8 w-8" />
+            </span>
+            <div className="mt-10 pr-16">
               <p className="text-2xl font-semibold tracking-[-0.05em]">{content.chatbotTitle}</p>
               <p className="mt-2 text-xs text-emerald-50/90">{content.chatbotSubtitle}</p>
             </div>

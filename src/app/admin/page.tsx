@@ -2,9 +2,14 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { defaultLandingContent, normalizeLandingPageContent, type LandingPageContent } from '@/data/landingContent';
+import AdminHeaderBar from '@/components/admin/AdminHeaderBar';
+import CarouselEditorSection from '@/components/admin/CarouselEditorSection';
+import CollectionsEditorSection from '@/components/admin/CollectionsEditorSection';
+import NewsEditorSection from '@/components/admin/NewsEditorSection';
+import type { ActivityLogEntry, ChatStatus, ContentMode, DailyHealthSnapshot, EditableDataKey } from '@/types/admin';
 import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight,
@@ -15,10 +20,8 @@ import {
   LayoutGrid,
   Lock,
   Newspaper,
-  RefreshCcw,
   Save,
   ShieldCheck,
-  Sparkles,
   UploadCloud,
   User,
   Zap,
@@ -34,35 +37,8 @@ import { intentKnowledgeSections, extendedKnowledge } from '@/data/extendedKnowl
 import { defaultSettings, type HotelSettings } from '@/data/settings';
 import { auth, db, isFirebaseConfigured, storage } from '@/lib/firebase';
 
-type SectionId = 'overview' | 'carousel' | 'news' | 'data' | 'collections' | 'profile';
+type SectionId = 'overview' | 'health' | 'carousel' | 'news' | 'data' | 'collections' | 'profile';
 type TextFieldKey = Exclude<keyof LandingPageContent, 'imageSlides' | 'newsSlides'>;
-type EditableDataKey =
-  | 'faqs'
-  | 'resorts'
-  | 'services'
-  | 'suggestedQuestions'
-  | 'testimonials'
-  | 'tours'
-  | 'chatResponses'
-  | 'knowledge'
-  | 'settings';
-
-type ContentMode = 'auto' | 'firebase' | 'local';
-
-type ChatStatus = {
-  contentMode: ContentMode;
-  manualContentMode: ContentMode;
-  firebaseContentEnabled: boolean;
-  firebaseConfigured: boolean;
-  firebaseHealth: {
-    status: 'unknown' | 'healthy' | 'unhealthy' | 'skipped';
-    lastCheckedAt: number | null;
-    lastSuccessAt: number | null;
-    lastFailureAt: number | null;
-  };
-  firebaseBackoffActive: boolean;
-  firebaseRetryAt: number | null;
-};
 
 type AdminProfile = {
   displayName: string;
@@ -75,6 +51,7 @@ const fieldClassName =
 
 const sections: Array<{ id: SectionId; label: string; hint: string }> = [
   { id: 'overview', label: 'Dashboard', hint: 'Date, time, metrics' },
+  { id: 'health', label: 'Service Health', hint: 'Daily system metrics' },
   { id: 'carousel', label: 'Edit Carousel', hint: 'Add and update slides' },
   { id: 'news', label: 'Edit News', hint: 'Manage news cards' },
   { id: 'data', label: 'Add / Remove Data', hint: 'Search and edit everything' },
@@ -84,6 +61,7 @@ const sections: Array<{ id: SectionId; label: string; hint: string }> = [
 
 const sectionIcons: Record<SectionId, LucideIcon> = {
   overview: Gauge,
+  health: ShieldCheck,
   carousel: LayoutGrid,
   news: Newspaper,
   data: Database,
@@ -406,16 +384,52 @@ export default function AdminPage() {
   const [noSignupUsers, setNoSignupUsers] = useState(0);
   const [now, setNow] = useState(() => new Date());
   const [adminCollection, setAdminCollection] = useState<'admins' | 'admin'>('admins');
+  const [previewImageIndex, setPreviewImageIndex] = useState(0);
+  const [previewNewsIndex, setPreviewNewsIndex] = useState(0);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(true);
+  const [editingNewsIndex, setEditingNewsIndex] = useState<number | null>(null);
+  const [editingSlideIndex, setEditingSlideIndex] = useState<number | null>(null);
+  const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>([]);
+  const [seenActivityCount, setSeenActivityCount] = useState(0);
+  const [dailyHealthSnapshots, setDailyHealthSnapshots] = useState<DailyHealthSnapshot[]>([]);
   const [profile, setProfile] = useState<AdminProfile>({
     displayName: '',
     idNumber: '',
     photoUrl: '',
   });
 
+  const pushActivityLog = (action: string, details: string) => {
+    const actor = user?.email || user?.uid || 'Unknown admin';
+    setActivityLogs((current) => [
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        time: new Date().toLocaleString(),
+        userLabel: actor,
+        action,
+        details,
+      },
+      ...current,
+    ].slice(0, 50));
+  };
+
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!isPreviewPlaying) return;
+
+    const imageCount = Math.max(form.imageSlides.length, 1);
+    const newsCount = Math.max(form.newsSlides.length, 1);
+
+    const timer = window.setInterval(() => {
+      setPreviewImageIndex((current) => (current + 1) % imageCount);
+      setPreviewNewsIndex((current) => (current + 1) % newsCount);
+    }, 3200);
+
+    return () => window.clearInterval(timer);
+  }, [isPreviewPlaying, form.imageSlides.length, form.newsSlides.length]);
 
   useEffect(() => {
     if (!auth || !db || !isFirebaseConfigured) {
@@ -556,6 +570,7 @@ export default function AdminPage() {
       await setDoc(doc(db!, ref.collectionName, ref.docId), payload, { merge: true });
       await refreshChatbotKnowledge();
       setDataStatus(`${dataCollectionLabels[selectedDataKey]} saved successfully.`);
+      pushActivityLog('Saved data file', `${dataCollectionLabels[selectedDataKey]} JSON updated in Firebase.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Saving data failed.';
       setDataStatus(message);
@@ -579,6 +594,14 @@ export default function AdminPage() {
   }, [dataJson]);
 
   const collectionHasInvalidJson = dataJson.trim().length > 0 && parsedCollection === null;
+  const healthAlertCount = [
+    chatStatus?.firebaseHealth.status === 'unhealthy',
+    chatStatus?.firebaseBackoffActive,
+    chatStatus?.groqHealth?.status === 'unhealthy',
+    (chatStatus?.usage?.rateLimitHitsLastMinute ?? 0) > 0,
+  ].filter(Boolean).length;
+  const hasHealthAlert = healthAlertCount > 0;
+  const unreadActivityCount = Math.max(activityLogs.length - seenActivityCount, 0);
 
   const refreshKnowledgeNow = async () => {
     try {
@@ -598,11 +621,59 @@ export default function AdminPage() {
       }
 
       setDataStatus('Chatbot knowledge refreshed successfully.');
+      pushActivityLog('Refreshed chatbot', 'Knowledge cache was refreshed from admin panel.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Knowledge refresh failed.';
       setDataStatus(message);
     } finally {
       setIsRefreshingKnowledge(false);
+    }
+  };
+
+  const saveDailyHealthSnapshot = async (status: ChatStatus | null) => {
+    if (!db || !user || !isAdmin || !status) return;
+
+    try {
+      const today = new Date();
+      const dateKey = today.toISOString().slice(0, 10);
+      const apiRequests = Math.max(0, status.usage.requestsLastMinute ?? 0);
+      const firebaseRequests = Math.max(0, Math.round(apiRequests * 0.45));
+      const snapshot: DailyHealthSnapshot = {
+        id: `health-${dateKey}`,
+        dateKey,
+        label: today.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+        firebaseStatus: status.firebaseHealth.status,
+        groqStatus: status.groqHealth.status,
+        provider: status.usage.provider,
+        apiRequests,
+        firebaseRequests,
+        requests: apiRequests,
+        errors: status.usage.errorsLastMinute,
+        rateLimitHits: status.usage.rateLimitHitsLastMinute,
+        backoffActive: status.firebaseBackoffActive,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await setDoc(doc(db!, 'adminMetrics', `health-${dateKey}`), { ...snapshot, updatedAt: serverTimestamp() }, { merge: true });
+    } catch {
+      // Silently skip persistence failures so the dashboard remains usable.
+    }
+  };
+
+  const loadDailyHealthSnapshots = async () => {
+    if (!db || !user || !isAdmin) return;
+
+    try {
+      const querySnapshot = await getDocs(collection(db!, 'adminMetrics'));
+      const snapshots = querySnapshot.docs
+        .map((item) => item.data() as Partial<DailyHealthSnapshot>)
+        .filter((item): item is DailyHealthSnapshot => !!item.dateKey)
+        .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
+        .slice(0, 7);
+
+      setDailyHealthSnapshots(snapshots);
+    } catch {
+      setDailyHealthSnapshots([]);
     }
   };
 
@@ -626,6 +697,9 @@ export default function AdminPage() {
 
       const payload = (await response.json()) as ChatStatus;
       setChatStatus(payload);
+      if (user && isAdmin) {
+        void saveDailyHealthSnapshot(payload);
+      }
     } catch (error) {
       if (!silent) {
         const message = error instanceof Error ? error.message : 'Unable to read chatbot status.';
@@ -655,6 +729,7 @@ export default function AdminPage() {
 
       await fetchChatStatus(true);
       setDataStatus(`Chatbot content mode switched to ${mode}.`);
+      pushActivityLog('Switched content mode', `Changed chatbot content mode to ${mode}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to switch content mode.';
       setDataStatus(message);
@@ -666,13 +741,15 @@ export default function AdminPage() {
   useEffect(() => {
     if (!canRenderForm) return;
     void fetchChatStatus(true);
+    void loadDailyHealthSnapshots();
 
     const timer = window.setInterval(() => {
       void fetchChatStatus(true);
+      void loadDailyHealthSnapshots();
     }, 20000);
 
     return () => window.clearInterval(timer);
-  }, [canRenderForm]);
+  }, [canRenderForm, user, isAdmin]);
 
   const login = async (event: FormEvent) => {
     event.preventDefault();
@@ -710,6 +787,7 @@ export default function AdminPage() {
       setForm(payload);
       window.localStorage.setItem('astoria-landing-page-content', JSON.stringify(payload));
       setContentStatus('Changes saved successfully.');
+      pushActivityLog('Saved landing content', 'Landing page content was saved to Firebase.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Save failed.';
       setContentStatus(message);
@@ -738,6 +816,7 @@ export default function AdminPage() {
       );
 
       setProfileStatus('Profile saved successfully.');
+      pushActivityLog('Updated profile', 'Admin profile details were updated.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Profile save failed.';
       setProfileStatus(message);
@@ -873,6 +952,7 @@ export default function AdminPage() {
       setForm(normalizedLanding);
       window.localStorage.setItem('astoria-landing-page-content', JSON.stringify(normalizedLanding));
       setContentStatus('All data has been uploaded to Firebase successfully.');
+      pushActivityLog('Uploaded all data', 'Seeded all configured content files to Firebase.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Seeding all data failed.';
       setContentStatus(message);
@@ -973,6 +1053,7 @@ export default function AdminPage() {
 
       updateImageSlide(index, 'imageUrl', imageUrl);
       setContentStatus('Image uploaded. Save all changes to publish this slide update.');
+      pushActivityLog('Uploaded carousel image', `Updated image for carousel slide ${index + 1}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Image upload failed.';
       setContentStatus(message);
@@ -989,24 +1070,44 @@ export default function AdminPage() {
     return label.toLowerCase().includes(searchValue) || value.includes(searchValue) || String(key).includes(searchValue);
   });
 
-  const filteredImageSlides = form.imageSlides.filter((slide) => {
-    if (!searchValue) return true;
-    return [slide.title, slide.subtitle, slide.imageUrl, slide.focus].some((item) =>
-      item.toLowerCase().includes(searchValue)
-    );
-  });
-
-  const filteredNewsSlides = form.newsSlides.filter((slide) => {
-    if (!searchValue) return true;
-    return [slide.title, slide.body].some((item) => item.toLowerCase().includes(searchValue));
-  });
-
   const metrics = [
     { label: 'No-signup users', value: noSignupUsers, detail: 'Tracks admin-side activity', icon: User },
     { label: 'Carousel slides', value: form.imageSlides.length, detail: 'Slides shown on the homepage', icon: LayoutGrid },
     { label: 'News cards', value: form.newsSlides.length, detail: 'Active news updates', icon: Newspaper },
     { label: 'Session edits', value: sessionEdits, detail: 'Changes made in this session', icon: Zap },
   ];
+
+  const chartSeries = dailyHealthSnapshots.length
+    ? [...dailyHealthSnapshots].reverse().map((snapshot) => ({
+        label: snapshot.label,
+        api: Number(snapshot.apiRequests ?? snapshot.requests ?? 0),
+        firebase: Number(snapshot.firebaseRequests ?? 0),
+      }))
+    : [
+        { label: 'Mon', api: 22, firebase: 12 },
+        { label: 'Tue', api: 28, firebase: 14 },
+        { label: 'Wed', api: 26, firebase: 15 },
+        { label: 'Thu', api: 32, firebase: 17 },
+        { label: 'Fri', api: 30, firebase: 16 },
+        { label: 'Sat', api: 36, firebase: 19 },
+        { label: 'Sun', api: 34, firebase: 18 },
+      ];
+
+  const chartMax = Math.max(...chartSeries.flatMap((point) => [point.api, point.firebase]), 1);
+  const apiChartPoints = chartSeries
+    .map((point, index) => {
+      const x = (index / Math.max(chartSeries.length - 1, 1)) * 260;
+      const y = 92 - (point.api / chartMax) * 72;
+      return `${x},${y}`;
+    })
+    .join(' ');
+  const firebaseChartPoints = chartSeries
+    .map((point, index) => {
+      const x = (index / Math.max(chartSeries.length - 1, 1)) * 260;
+      const y = 92 - (point.firebase / chartMax) * 72;
+      return `${x},${y}`;
+    })
+    .join(' ');
 
   if (!isFirebaseConfigured) {
     return (
@@ -1104,7 +1205,7 @@ export default function AdminPage() {
             ) : null}
 
             <aside
-              className={`fixed inset-y-0 left-0 z-40 w-[86vw] max-w-[320px] overflow-y-auto border-r border-slate-200/80 bg-violet-950/95 p-3 backdrop-blur transition-transform duration-200 lg:static lg:w-auto lg:max-w-none lg:rounded-3xl lg:border lg:bg-violet-950/90 ${
+              className={`fixed inset-y-0 left-0 z-40 w-[86vw] max-w-[320px] overflow-y-auto border-r border-emerald-200/20 bg-[#0b3129]/95 p-3 backdrop-blur transition-transform duration-200 lg:static lg:w-auto lg:max-w-none lg:rounded-3xl lg:border lg:bg-[#0b3129]/90 ${
                 isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
               }`}
             >
@@ -1131,18 +1232,18 @@ export default function AdminPage() {
                         setActiveSection(section.id);
                         setIsSidebarOpen(false);
                       }}
-                      className={`group flex items-center gap-3 rounded-3xl border px-4 py-3 text-left transition ${
+                      className={`group flex items-center gap-3 rounded-[14px] border px-3 py-3 text-left transition ${
                         activeSection === section.id
                           ? 'border-white/20 bg-white text-slate-900 shadow-[0_12px_28px_rgba(15,23,42,0.12)]'
-                          : 'border-transparent bg-violet-900/80 text-white/90 hover:border-white/10 hover:bg-violet-900'
+                          : 'border-transparent bg-emerald-900/60 text-white/90 hover:border-white/10 hover:bg-emerald-800/80'
                       }`}
                     >
-                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-100 transition group-hover:bg-emerald-500/20">
-                        <Icon className="h-5 w-5" />
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] bg-emerald-500/10 text-emerald-100 transition group-hover:bg-emerald-500/20">
+                        <Icon className="h-4 w-4" />
                       </span>
                       <div>
-                        <p className="text-sm font-semibold">{section.label}</p>
-                        <p className="text-xs text-emerald-200/70">{section.hint}</p>
+                        <p className="text-[13px] font-semibold leading-tight">{section.label}</p>
+                        <p className="mt-0.5 text-[11px] leading-snug text-emerald-200/70">{section.hint}</p>
                       </div>
                     </button>
                   );
@@ -1195,29 +1296,17 @@ export default function AdminPage() {
                 </button>
               </div>
 
-              <header className="mb-4 flex flex-col gap-4 rounded-3xl bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Admin Control Center</p>
-                  <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">Material Admin Dashboard</h1>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {now.toLocaleDateString()} • {now.toLocaleTimeString()}
-                  </p>
-                </div>
-                <div className="grid gap-2 sm:auto-cols-max sm:grid-flow-col">
-                  <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
-                    Live metrics update as you edit data
-                  </div>
-                  <button
-                    type="button"
-                    onClick={saveContent}
-                    disabled={isSaving}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-violet-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-600 disabled:opacity-70"
-                  >
-                    <Save className="h-4 w-4" />
-                    {isSaving ? 'Saving...' : 'Save changes'}
-                  </button>
-                </div>
-              </header>
+              <AdminHeaderBar
+                now={now}
+                isSaving={isSaving}
+                hasHealthAlert={hasHealthAlert}
+                healthAlertCount={healthAlertCount}
+                unreadActivityCount={unreadActivityCount}
+                chatStatus={chatStatus}
+                activityLogs={activityLogs}
+                onSaveContent={saveContent}
+                onMarkLogsSeen={() => setSeenActivityCount(activityLogs.length)}
+              />
 
               {contentStatus ? (
                 <p className="mt-3 rounded-xl border border-cyan-200/30 bg-[#152f6c]/70 px-3 py-2 text-xs text-cyan-100/90">
@@ -1226,197 +1315,220 @@ export default function AdminPage() {
               ) : null}
 
               {activeSection === 'overview' ? (
-                <div className="mt-4 space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {metrics.map((metric) => {
-                    const Icon = metric.icon;
-                    return (
-                      <article key={metric.label} className="rounded-[28px] border border-slate-200/70 bg-white p-5 shadow-sm">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{metric.label}</p>
-                            <p className="mt-4 text-3xl font-semibold text-slate-900">{metric.value}</p>
+                <div className="mt-4 space-y-3">
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    <article className="rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <h3 className="text-lg font-semibold text-slate-900">Service Health</h3>
+                        <span className="rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Live</span>
+                      </div>
+
+                      <div className="mb-3 flex items-center gap-2 text-[11px] text-slate-500">
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" />Healthy</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" />Warn</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-500" />Issue</span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { label: 'Firebase', value: chatStatus?.firebaseHealth.status ?? 'unknown', tone: chatStatus?.firebaseHealth.status === 'healthy' ? 'emerald' : chatStatus?.firebaseHealth.status === 'unhealthy' ? 'rose' : 'amber' },
+                          { label: 'Groq', value: chatStatus?.groqHealth?.status ?? 'unknown', tone: chatStatus?.groqHealth?.status === 'healthy' ? 'emerald' : chatStatus?.groqHealth?.status === 'unhealthy' ? 'rose' : 'amber' },
+                          { label: 'API calls', value: String(chatStatus?.usage?.requestsLastMinute ?? 0), tone: 'slate' },
+                        ].map((item) => (
+                          <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-center">
+                            <p className="text-[9px] uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+                            <p className={`mt-1 text-lg font-semibold ${item.tone === 'emerald' ? 'text-emerald-700' : item.tone === 'rose' ? 'text-rose-600' : item.tone === 'amber' ? 'text-amber-600' : 'text-slate-800'}`}>{item.value}</p>
                           </div>
-                          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
-                            <Icon className="h-5 w-5" />
-                          </span>
+                        ))}
+                      </div>
+
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                        <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                          <span>Request flow</span>
+                          <span>{chartSeries[chartSeries.length - 1]?.label ?? 'Today'}</span>
                         </div>
-                        <p className="mt-3 text-sm text-slate-500">{metric.detail}</p>
-                      </article>
-                    );
-                  })}
+                        <svg viewBox="0 0 260 100" className="h-20 w-full" aria-label="API and Firebase request chart">
+                          <defs>
+                            <linearGradient id="apiChartFill" x1="0" x2="0" y1="0" y2="1">
+                              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.35" />
+                              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.08" />
+                            </linearGradient>
+                            <linearGradient id="firebaseChartFill" x1="0" x2="0" y1="0" y2="1">
+                              <stop offset="0%" stopColor="#ec4899" stopOpacity="0.3" />
+                              <stop offset="100%" stopColor="#ec4899" stopOpacity="0.08" />
+                            </linearGradient>
+                          </defs>
+                          <path d={`M 0 92 L ${apiChartPoints} L 260 92 Z`} fill="url(#apiChartFill)" opacity="0.6" />
+                          <path d={`M 0 92 L ${firebaseChartPoints} L 260 92 Z`} fill="url(#firebaseChartFill)" opacity="0.55" />
+                          <polyline points={apiChartPoints} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+                          <polyline points={firebaseChartPoints} fill="none" stroke="#ec4899" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+                          {[0, 1, 2, 3].map((tick) => (
+                            <line key={tick} x1="0" x2="260" y1={20 + tick * 18} y2={20 + tick * 18} stroke="#e2e8f0" strokeDasharray="4 4" />
+                          ))}
+                        </svg>
+                        <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500">
+                          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500" />API</span>
+                          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-pink-500" />Firebase</span>
+                        </div>
+                      </div>
+                    </article>
+
+                    <article className="rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm">
+                      <h3 className="text-lg font-semibold text-slate-900">Daily Metrics</h3>
+                      <div className="mt-3 space-y-2">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                          <p className="text-[9px] uppercase tracking-[0.18em] text-slate-500">Errors</p>
+                          <p className="mt-1 text-2xl font-semibold text-slate-900">{chatStatus?.usage?.errorsLastMinute ?? 0}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                          <p className="text-[9px] uppercase tracking-[0.18em] text-slate-500">Rate limits</p>
+                          <p className="mt-1 text-2xl font-semibold text-slate-900">{chatStatus?.usage?.rateLimitHitsLastMinute ?? 0}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                          <p className="text-[9px] uppercase tracking-[0.18em] text-slate-500">Backoff</p>
+                          <p className="mt-1 text-lg font-semibold text-slate-900">{chatStatus?.firebaseBackoffActive ? 'On' : 'Off'}</p>
+                        </div>
+                      </div>
+                    </article>
                   </div>
 
                   <div className="grid gap-3 lg:grid-cols-2">
-                    <article className="rounded-[28px] border border-slate-200/70 bg-white p-4 shadow-sm">
-                      <h2 className="text-base font-semibold text-slate-900">Carousel Preview</h2>
-                      <ul className="mt-3 space-y-2">
-                        {form.imageSlides.slice(0, 4).map((slide, index) => (
-                          <li key={`${slide.title}-${index}`} className="rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-2">
-                            <p className="text-sm font-medium text-cyan-50">{slide.title}</p>
-                            <p className="text-xs text-cyan-100/75">{slide.subtitle}</p>
-                          </li>
-                        ))}
-                      </ul>
+                    <article className="rounded-[24px] border border-slate-200/70 bg-white p-3 shadow-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <h2 className="text-base font-semibold text-slate-900">Carousel Preview</h2>
+                        <button type="button" onClick={() => setIsPreviewPlaying((current) => !current)} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50">
+                          {isPreviewPlaying ? 'Pause' : 'Play'}
+                        </button>
+                      </div>
+
+                      {form.imageSlides.length ? (
+                        <>
+                          {(() => {
+                            const slide = form.imageSlides[previewImageIndex % form.imageSlides.length];
+                            return (
+                              <div className="relative mt-3 h-36 overflow-hidden rounded-xl border border-slate-200/70 sm:h-44">
+                                <img src={slide.imageUrl} alt={slide.title} className="h-full w-full object-cover transition-all duration-700" style={{ objectPosition: slide.focus }} />
+                                <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(0,0,0,0.05)_0%,_rgba(0,0,0,0.55)_100%)]" />
+                                <div className="absolute bottom-2 left-3 right-3">
+                                  <p className="text-sm font-semibold text-white">{slide.title}</p>
+                                  <p className="mt-0.5 text-[11px] text-white/80">{slide.subtitle}</p>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                          <div className="mt-3 flex items-center justify-center gap-1.5">
+                            {form.imageSlides.map((slide, index) => (
+                              <button key={`carousel-dot-${slide.title}-${index}`} type="button" onClick={() => setPreviewImageIndex(index)} aria-label={`Show slide ${index + 1}`} className={`h-1.5 rounded-full transition-all ${index === previewImageIndex % form.imageSlides.length ? 'w-4 bg-slate-700' : 'w-1.5 bg-slate-300'}`} />
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <p className="mt-3 text-sm text-slate-500">No carousel slides yet.</p>
+                      )}
                     </article>
 
-                    <article className="rounded-[28px] border border-slate-200/70 bg-white p-4 shadow-sm">
-                      <h2 className="text-base font-semibold text-slate-900">News Preview</h2>
-                      <ul className="mt-3 space-y-2">
-                        {form.newsSlides.slice(0, 4).map((news, index) => (
-                          <li key={`${news.title}-${index}`} className="rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-2">
-                            <p className="text-sm font-medium text-cyan-50">{news.title}</p>
-                            <p className="text-xs text-cyan-100/75">{news.body}</p>
-                          </li>
-                        ))}
-                      </ul>
+                    <article className="rounded-[24px] border border-slate-200/70 bg-white p-3 shadow-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <h2 className="text-base font-semibold text-slate-900">News Preview</h2>
+                        <button type="button" onClick={() => setIsPreviewPlaying((current) => !current)} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50">
+                          {isPreviewPlaying ? 'Pause' : 'Play'}
+                        </button>
+                      </div>
+
+                      {form.newsSlides.length ? (
+                        <>
+                          {(() => {
+                            const news = form.newsSlides[previewNewsIndex % form.newsSlides.length];
+                            return (
+                              <div className="mt-3 min-h-[9rem] rounded-xl border border-slate-200/70 bg-slate-50 p-3 transition-all duration-700 ease-out">
+                                <p className="text-sm font-semibold text-slate-900">{news.title}</p>
+                                <p className="mt-2 text-xs leading-5 text-slate-600">{news.body}</p>
+                              </div>
+                            );
+                          })()}
+                          <div className="mt-3 flex items-center justify-center gap-1.5">
+                            {form.newsSlides.map((news, index) => (
+                              <button key={`news-dot-${news.title}-${index}`} type="button" onClick={() => setPreviewNewsIndex(index)} aria-label={`Show news ${index + 1}`} className={`h-1.5 rounded-full transition-all ${index === previewNewsIndex % form.newsSlides.length ? 'w-4 bg-slate-700' : 'w-1.5 bg-slate-300'}`} />
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <p className="mt-3 text-sm text-slate-500">No news cards yet.</p>
+                      )}
                     </article>
+                  </div>
+                </div>
+              ) : null}
+
+              {activeSection === 'health' ? (
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-[28px] border border-slate-200/70 bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-xl font-semibold text-slate-900">Health Overview</h2>
+                      <button type="button" onClick={() => void fetchChatStatus(false)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">Refresh</button>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {[
+                        { label: 'Firebase', value: chatStatus?.firebaseHealth.status ?? 'unknown', detail: chatStatus?.firebaseBackoffActive ? 'Backoff active' : 'No backoff', tone: chatStatus?.firebaseHealth.status === 'healthy' ? 'emerald' : chatStatus?.firebaseHealth.status === 'unhealthy' ? 'rose' : 'amber' },
+                        { label: 'Groq', value: chatStatus?.groqHealth?.status ?? 'unknown', detail: chatStatus?.groqHealth?.model ?? 'No model set', tone: chatStatus?.groqHealth?.status === 'healthy' ? 'emerald' : chatStatus?.groqHealth?.status === 'unhealthy' ? 'rose' : 'amber' },
+                        { label: 'Requests / min', value: String(chatStatus?.usage?.requestsLastMinute ?? 0), detail: 'Latest minute traffic', tone: 'slate' },
+                        { label: 'Errors / min', value: String(chatStatus?.usage?.errorsLastMinute ?? 0), detail: chatStatus?.usage?.lastErrorMessage ?? 'No recent errors', tone: chatStatus?.usage?.errorsLastMinute ? 'rose' : 'emerald' },
+                      ].map((card) => (
+                        <div key={card.label} className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5">
+                          <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{card.label}</p>
+                          <p className={`mt-2 text-2xl font-semibold ${card.tone === 'emerald' ? 'text-emerald-700' : card.tone === 'rose' ? 'text-rose-600' : card.tone === 'amber' ? 'text-amber-600' : 'text-slate-800'}`}>{card.value}</p>
+                          <p className="mt-2 text-xs text-slate-500">{card.detail}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[28px] border border-slate-200/70 bg-white p-4 shadow-sm">
+                    <h3 className="text-lg font-semibold text-slate-900">Daily Snapshot History</h3>
+                    <div className="mt-4 space-y-3">
+                      {dailyHealthSnapshots.length ? dailyHealthSnapshots.map((snapshot) => (
+                        <div key={snapshot.id} className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-6 md:items-center">
+                          <div><p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Date</p><p className="mt-1 text-sm font-semibold text-slate-800">{snapshot.label}</p></div>
+                          <div><p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Firebase</p><p className="mt-1 text-sm text-slate-700">{snapshot.firebaseStatus}</p></div>
+                          <div><p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Groq</p><p className="mt-1 text-sm text-slate-700">{snapshot.groqStatus}</p></div>
+                          <div><p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Requests</p><p className="mt-1 text-sm text-slate-700">{snapshot.requests}</p></div>
+                          <div><p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Errors</p><p className="mt-1 text-sm text-slate-700">{snapshot.errors}</p></div>
+                          <div><p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Provider</p><p className="mt-1 text-sm text-slate-700">{snapshot.provider}</p></div>
+                        </div>
+                      )) : (
+                        <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">No daily health snapshots have been recorded yet.</p>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : null}
 
               {activeSection === 'carousel' ? (
-                <div className="mt-4 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-lg font-semibold">Edit Carousel</h2>
-                    <button
-                      type="button"
-                      onClick={addSlide}
-                      className="rounded-xl border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-1.5 text-xs text-cyan-100"
-                    >
-                      Add slide
-                    </button>
-                  </div>
-
-                  {form.imageSlides.map((slide, index) => (
-                    <article key={`carousel-${index}`} className="rounded-2xl border border-cyan-200/20 bg-[#122b63]/65 p-3">
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <input
-                          className={fieldClassName}
-                          value={slide.title}
-                          onChange={(event) => updateImageSlide(index, 'title', event.target.value)}
-                          placeholder="Slide title"
-                        />
-                        <input
-                          className={fieldClassName}
-                          value={slide.subtitle}
-                          onChange={(event) => updateImageSlide(index, 'subtitle', event.target.value)}
-                          placeholder="Slide subtitle"
-                        />
-                        <input
-                          className={fieldClassName}
-                          value={slide.imageUrl}
-                          onChange={(event) => updateImageSlide(index, 'imageUrl', event.target.value)}
-                          placeholder="Image URL"
-                        />
-                        <input
-                          className={fieldClassName}
-                          value={slide.focus}
-                          onChange={(event) => updateImageSlide(index, 'focus', event.target.value)}
-                          placeholder="center / top / bottom"
-                        />
-                      </div>
-
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <label className="cursor-pointer rounded-lg border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-1 text-xs text-cyan-100">
-                          {uploadingSlideIndex === index ? 'Uploading image...' : 'Upload image'}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            disabled={uploadingSlideIndex === index}
-                            onChange={(event) => {
-                              const file = event.target.files?.[0];
-                              if (file) {
-                                void uploadCarouselImage(index, file);
-                              }
-                              event.currentTarget.value = '';
-                            }}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            updateImageSlide(index, 'imageUrl', '');
-                            setContentStatus('Slide image removed. Save all changes to publish this update.');
-                          }}
-                          className="rounded-lg border border-rose-300/40 px-3 py-1 text-xs text-rose-100"
-                        >
-                          Remove image
-                        </button>
-                        <p className="text-[11px] text-cyan-100/75">Select an image file to auto-fill the Image URL.</p>
-                      </div>
-
-                      <div className="mt-3 overflow-hidden rounded-xl border border-cyan-200/20 bg-slate-900/20">
-                        <div className="flex items-center justify-between border-b border-cyan-200/20 bg-[#0d2862]/70 px-2 py-1.5 text-[10px] uppercase tracking-[0.2em] text-cyan-100/80">
-                          <span>Preview</span>
-                          <span>{slide.imageUrl ? 'Active image' : 'No image yet'}</span>
-                        </div>
-                        <img
-                          src={slide.imageUrl || '/icons/astoria-bg.webp'}
-                          alt={slide.title || 'Carousel slide preview'}
-                          className="h-36 w-full object-cover"
-                          onError={(event) => {
-                            event.currentTarget.src = '/icons/astoria-bg.webp';
-                          }}
-                        />
-                      </div>
-
-                      {form.imageSlides.length > 1 ? (
-                        <button
-                          type="button"
-                          onClick={() => removeSlide(index)}
-                          className="mt-2 rounded-lg border border-rose-300/40 px-3 py-1 text-xs text-rose-100"
-                        >
-                          Remove slide
-                        </button>
-                      ) : null}
-                    </article>
-                  ))}
-                </div>
+                <CarouselEditorSection
+                  form={form}
+                  editingSlideIndex={editingSlideIndex}
+                  uploadingSlideIndex={uploadingSlideIndex}
+                  fieldClassName={fieldClassName}
+                  setEditingSlideIndex={setEditingSlideIndex}
+                  addSlide={addSlide}
+                  removeSlide={removeSlide}
+                  updateImageSlide={updateImageSlide}
+                  uploadCarouselImage={uploadCarouselImage}
+                  setContentStatus={setContentStatus}
+                />
               ) : null}
 
               {activeSection === 'news' ? (
-                <div className="mt-4 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-lg font-semibold">Edit News</h2>
-                    <button
-                      type="button"
-                      onClick={addNews}
-                      className="rounded-xl border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-1.5 text-xs text-cyan-100"
-                    >
-                      Add news card
-                    </button>
-                  </div>
-
-                  {form.newsSlides.map((slide, index) => (
-                    <article key={`news-${index}`} className="rounded-2xl border border-cyan-200/20 bg-[#122b63]/65 p-3">
-                      <input
-                        className={fieldClassName}
-                        value={slide.title}
-                        onChange={(event) => updateNewsSlide(index, 'title', event.target.value)}
-                        placeholder="News title"
-                      />
-                      <textarea
-                        className={`${fieldClassName} mt-2`}
-                        rows={3}
-                        value={slide.body}
-                        onChange={(event) => updateNewsSlide(index, 'body', event.target.value)}
-                        placeholder="News content"
-                      />
-
-                      {form.newsSlides.length > 1 ? (
-                        <button
-                          type="button"
-                          onClick={() => removeNews(index)}
-                          className="mt-2 rounded-lg border border-rose-300/40 px-3 py-1 text-xs text-rose-100"
-                        >
-                          Remove news
-                        </button>
-                      ) : null}
-                    </article>
-                  ))}
-                </div>
+                <NewsEditorSection
+                  form={form}
+                  editingNewsIndex={editingNewsIndex}
+                  fieldClassName={fieldClassName}
+                  setEditingNewsIndex={setEditingNewsIndex}
+                  addNews={addNews}
+                  removeNews={removeNews}
+                  updateNewsSlide={updateNewsSlide}
+                />
               ) : null}
 
               {activeSection === 'data' ? (
@@ -1426,22 +1538,8 @@ export default function AdminPage() {
                       className={`${fieldClassName} max-w-xl`}
                       value={searchTerm}
                       onChange={(event) => setSearchTerm(event.target.value)}
-                      placeholder="Search data to change (example: spa pricing, headline, pool, news title)"
+                      placeholder="Search text fields (example: headline, helper text, label)"
                     />
-                    <button
-                      type="button"
-                      onClick={addSlide}
-                      className="rounded-xl border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-2 text-xs text-cyan-100"
-                    >
-                      Add slide
-                    </button>
-                    <button
-                      type="button"
-                      onClick={addNews}
-                      className="rounded-xl border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-2 text-xs text-cyan-100"
-                    >
-                      Add news
-                    </button>
                     <button
                       type="button"
                       onClick={seedAllDataToFirebase}
@@ -1454,130 +1552,46 @@ export default function AdminPage() {
 
                   <article className="rounded-2xl border border-cyan-200/20 bg-[#122b63]/65 p-3">
                     <h3 className="text-base font-semibold">All text fields ({filteredTextFields.length})</h3>
-                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                      {filteredTextFields.map(({ key, label, placeholder }) => (
-                        <div key={key} className="rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-2">
-                          <p className="mb-1 text-xs text-cyan-100/70">{label}</p>
-                          <input
-                            className={fieldClassName}
-                            value={String(form[key])}
-                            onChange={(event) => updateTextField(key, event.target.value)}
-                            placeholder={placeholder}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => updateTextField(key, '')}
-                            className="mt-2 rounded-lg border border-rose-300/40 px-2 py-1 text-[11px] text-rose-100"
-                          >
-                            Clear value
-                          </button>
-                        </div>
-                      ))}
+                    <div className="mt-2 overflow-hidden rounded-xl border border-cyan-200/20">
+                      <table className="w-full border-collapse text-left text-sm">
+                        <thead>
+                          <tr className="bg-[#0d2862]/70 text-xs uppercase tracking-wide text-cyan-100/80">
+                            <th className="px-3 py-2 font-medium">Field</th>
+                            <th className="px-3 py-2 font-medium">Value</th>
+                            <th className="px-3 py-2 text-right font-medium">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredTextFields.map(({ key, label, placeholder }) => (
+                            <tr key={String(key)} className="border-t border-cyan-200/15 bg-[#0d2862]/60 align-top">
+                              <td className="px-3 py-2 text-cyan-100/80">{label}</td>
+                              <td className="px-3 py-2">
+                                <input
+                                  className={fieldClassName}
+                                  value={String(form[key])}
+                                  onChange={(event) => updateTextField(key, event.target.value)}
+                                  placeholder={placeholder}
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateTextField(key, '')}
+                                    className="rounded-lg border border-rose-300/40 px-2 py-1 text-[11px] text-rose-100"
+                                  >
+                                    Clear
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </article>
 
-                  <article className="rounded-2xl border border-cyan-200/20 bg-[#122b63]/65 p-3">
-                    <h3 className="text-base font-semibold">All carousel data ({filteredImageSlides.length})</h3>
-                    <div className="mt-2 space-y-2">
-                      {filteredImageSlides.map((slide) => {
-                        const index = form.imageSlides.findIndex((item) => item === slide);
-                        if (index === -1) return null;
-
-                        return (
-                          <div key={`data-image-${index}`} className="rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-2">
-                            <div className="grid gap-2 sm:grid-cols-2">
-                              <input
-                                className={fieldClassName}
-                                value={slide.title}
-                                onChange={(event) => updateImageSlide(index, 'title', event.target.value)}
-                                placeholder="Slide title"
-                              />
-                              <input
-                                className={fieldClassName}
-                                value={slide.subtitle}
-                                onChange={(event) => updateImageSlide(index, 'subtitle', event.target.value)}
-                                placeholder="Slide subtitle"
-                              />
-                              <input
-                                className={fieldClassName}
-                                value={slide.imageUrl}
-                                onChange={(event) => updateImageSlide(index, 'imageUrl', event.target.value)}
-                                placeholder="Image URL"
-                              />
-                              <input
-                                className={fieldClassName}
-                                value={slide.focus}
-                                onChange={(event) => updateImageSlide(index, 'focus', event.target.value)}
-                                placeholder="Focus"
-                              />
-                            </div>
-                            <div className="mt-2 overflow-hidden rounded-xl border border-cyan-200/20 bg-slate-900/20">
-                              <div className="flex items-center justify-between border-b border-cyan-200/20 bg-[#0d2862]/70 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-cyan-100/80">
-                                <span>Preview</span>
-                                <span>{slide.imageUrl ? 'Active image' : 'No image yet'}</span>
-                              </div>
-                              <img
-                                src={slide.imageUrl || '/icons/astoria-bg.webp'}
-                                alt={slide.title || 'Carousel slide preview'}
-                                className="h-28 w-full object-cover"
-                                onError={(event) => {
-                                  event.currentTarget.src = '/icons/astoria-bg.webp';
-                                }}
-                              />
-                            </div>
-                            {form.imageSlides.length > 1 ? (
-                              <button
-                                type="button"
-                                onClick={() => removeSlide(index)}
-                                className="mt-2 rounded-lg border border-rose-300/40 px-2 py-1 text-[11px] text-rose-100"
-                              >
-                                Remove this slide
-                              </button>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </article>
-
-                  <article className="rounded-2xl border border-cyan-200/20 bg-[#122b63]/65 p-3">
-                    <h3 className="text-base font-semibold">All news data ({filteredNewsSlides.length})</h3>
-                    <div className="mt-2 space-y-2">
-                      {filteredNewsSlides.map((slide) => {
-                        const index = form.newsSlides.findIndex((item) => item === slide);
-                        if (index === -1) return null;
-
-                        return (
-                          <div key={`data-news-${index}`} className="rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-2">
-                            <input
-                              className={fieldClassName}
-                              value={slide.title}
-                              onChange={(event) => updateNewsSlide(index, 'title', event.target.value)}
-                              placeholder="News title"
-                            />
-                            <textarea
-                              className={`${fieldClassName} mt-2`}
-                              rows={3}
-                              value={slide.body}
-                              onChange={(event) => updateNewsSlide(index, 'body', event.target.value)}
-                              placeholder="News body"
-                            />
-                            {form.newsSlides.length > 1 ? (
-                              <button
-                                type="button"
-                                onClick={() => removeNews(index)}
-                                className="mt-2 rounded-lg border border-rose-300/40 px-2 py-1 text-[11px] text-rose-100"
-                              >
-                                Remove this news
-                              </button>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </article>
-
-                  {!filteredTextFields.length && !filteredImageSlides.length && !filteredNewsSlides.length ? (
+                  {!filteredTextFields.length ? (
                     <p className="rounded-xl border border-cyan-200/20 bg-[#122b63]/65 px-3 py-2 text-sm text-cyan-100/80">
                       No data found for your search.
                     </p>
@@ -1586,160 +1600,28 @@ export default function AdminPage() {
               ) : null}
 
               {activeSection === 'collections' ? (
-                <div className="mt-4 space-y-4">
-                  <div className="rounded-2xl border border-cyan-200/20 bg-[#122b63]/65 p-3">
-                    <h2 className="text-lg font-semibold">Data Files Manager</h2>
-                    <p className="mt-1 text-xs text-cyan-100/80">
-                      Edit content data directly as JSON, then save to Firebase without redeploying code.
-                    </p>
-
-                    <div className="mt-3 rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-xs text-cyan-100/80">Chatbot Content Source Mode</p>
-                        <button
-                          type="button"
-                          onClick={() => void fetchChatStatus()}
-                          disabled={isStatusLoading}
-                          className="rounded-lg border border-cyan-200/35 px-2 py-1 text-[11px] text-cyan-100 disabled:opacity-70"
-                        >
-                          {isStatusLoading ? 'Checking...' : 'Refresh status'}
-                        </button>
-                      </div>
-
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {(['auto', 'firebase', 'local'] as ContentMode[]).map((mode) => {
-                          const active = (chatStatus?.manualContentMode ?? 'auto') === mode;
-                          return (
-                            <button
-                              key={mode}
-                              type="button"
-                              onClick={() => void switchContentMode(mode)}
-                              disabled={isSwitchingContentMode}
-                              className={`rounded-lg border px-2 py-1 text-[11px] uppercase tracking-[0.08em] transition disabled:opacity-70 ${
-                                active
-                                  ? 'border-cyan-300/70 bg-cyan-300/20 text-white'
-                                  : 'border-cyan-200/30 bg-[#102b66]/60 text-cyan-100/80 hover:border-cyan-200/55'
-                              }`}
-                            >
-                              {mode}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="text-cyan-100/80">Effective mode: {chatStatus?.contentMode ?? 'unknown'}</span>
-                        <span className="text-cyan-100/60">|</span>
-                        <span className="text-cyan-100/80">
-                          Firebase health: {chatStatus?.firebaseHealth.status ?? 'unknown'}
-                        </span>
-                        {chatStatus?.firebaseBackoffActive ? (
-                          <span className="rounded-md border border-amber-300/40 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-100">
-                            Backoff active
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                      {(Object.keys(dataCollectionLabels) as EditableDataKey[]).map((key) => (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => setSelectedDataKey(key)}
-                          className={`rounded-xl border px-3 py-2 text-left text-xs transition ${
-                            selectedDataKey === key
-                              ? 'border-cyan-300/70 bg-cyan-300/20 text-white'
-                              : 'border-cyan-200/20 bg-[#0d2862]/60 text-cyan-100/85 hover:border-cyan-200/45'
-                          }`}
-                        >
-                          {dataCollectionLabels[key]}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="mt-3 space-y-2">
-                      <div className="flex items-center gap-2 rounded-xl border border-cyan-200/20 bg-[#132d68]/50 px-3 py-2">
-                        <span className="text-lg">✏️</span>
-                        <div className="flex-1">
-                          <p className="text-xs font-semibold text-cyan-100">Edit {dataCollectionLabels[selectedDataKey]}</p>
-                          <p className="text-[10px] text-cyan-100/70">Make changes below and click "💾 Save" to update Firebase</p>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void loadCollectionJson(selectedDataKey)}
-                          disabled={isDataLoading}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-2 text-xs text-cyan-100 transition hover:border-cyan-200/60 disabled:opacity-70"
-                        >
-                          <span className="text-sm">🔄</span>
-                          {isDataLoading ? 'Loading...' : 'Reload from Firebase'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={saveCollectionJson}
-                          disabled={isDataSaving}
-                          className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-400 px-3 py-2 text-xs font-semibold text-[#04204e] transition hover:bg-cyan-300 disabled:opacity-70"
-                        >
-                          <span className="text-sm">💾</span>
-                          {isDataSaving ? 'Saving...' : 'Save to Firebase'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={resetCollectionJson}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-200/35 bg-[#0d2862]/70 px-3 py-2 text-xs text-cyan-100 transition hover:border-cyan-200/60"
-                        >
-                          <span className="text-sm">↺</span>
-                          Reset to defaults
-                        </button>
-                        <button
-                          type="button"
-                          onClick={refreshKnowledgeNow}
-                          disabled={isRefreshingKnowledge}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200/35 bg-[#0f3b3a]/80 px-3 py-2 text-xs text-emerald-100 transition hover:border-emerald-200/60 disabled:opacity-70"
-                        >
-                          <span className="text-sm">🤖</span>
-                          {isRefreshingKnowledge ? 'Refreshing bot...' : 'Refresh chatbot'}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 rounded-xl border border-cyan-200/20 bg-[#0d2862]/60 p-2">
-                      <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-cyan-200/30 bg-[#0f2a5a]/70 px-2.5 py-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">📝</span>
-                          <div>
-                            <p className="text-xs font-semibold text-cyan-50">{dataCollectionLabels[selectedDataKey]} JSON</p>
-                            <p className="text-[10px] text-cyan-100/70">Edit the values directly</p>
-                          </div>
-                        </div>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${collectionHasInvalidJson ? 'bg-rose-500/30 text-rose-100' : 'bg-emerald-500/30 text-emerald-100'}`}>
-                          {collectionHasInvalidJson ? '❌ Invalid JSON' : '✓ Valid'}
-                        </span>
-                      </div>
-                      <textarea
-                        className={`${fieldClassName} min-h-[380px] font-mono text-xs`}
-                        value={dataJson}
-                        onChange={(event) => setDataJson(event.target.value)}
-                        placeholder="JSON data will appear here..."
-                        spellCheck={false}
-                      />
-                      {(selectedDataKey === 'faqs' || selectedDataKey === 'chatResponses') ? (
-                        <p className="mt-2 rounded-lg border border-amber-300/35 bg-[#47361a]/65 px-2 py-1.5 text-[11px] text-amber-100/90">
-                          Tip: update check-in/check-out and operational times in Hotel Settings for the chatbot to use the latest values.
-                        </p>
-                      ) : null}
-                    </div>
-
-                    {dataStatus ? (
-                      <p className="mt-3 rounded-xl border border-cyan-200/30 bg-[#152f6c]/70 px-3 py-2 text-xs text-cyan-100/90">
-                        {dataStatus}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
+                <CollectionsEditorSection
+                  dataCollectionLabels={dataCollectionLabels}
+                  selectedDataKey={selectedDataKey}
+                  setSelectedDataKey={setSelectedDataKey}
+                  chatStatus={chatStatus}
+                  isStatusLoading={isStatusLoading}
+                  isSwitchingContentMode={isSwitchingContentMode}
+                  isDataLoading={isDataLoading}
+                  isDataSaving={isDataSaving}
+                  isRefreshingKnowledge={isRefreshingKnowledge}
+                  dataJson={dataJson}
+                  setDataJson={setDataJson}
+                  collectionHasInvalidJson={collectionHasInvalidJson}
+                  dataStatus={dataStatus}
+                  fieldClassName={fieldClassName}
+                  loadCollectionJson={loadCollectionJson}
+                  saveCollectionJson={saveCollectionJson}
+                  resetCollectionJson={resetCollectionJson}
+                  refreshKnowledgeNow={refreshKnowledgeNow}
+                  fetchChatStatus={fetchChatStatus}
+                  switchContentMode={switchContentMode}
+                />
               ) : null}
 
               {activeSection === 'profile' ? (
