@@ -43,15 +43,16 @@ type KnowledgeData = {
   chatResponses: Record<string, string>;
   intentSections: Record<string, string>;
   settings: HotelSettings;
+  announcements: Array<{ title: string; content: string }>;
 };
 
 type ContentMode = 'auto' | 'firebase' | 'local';
 
-const KNOWLEDGE_CACHE_TTL_MS = 60_000;
+const KNOWLEDGE_CACHE_TTL_MS = 300_000;   // 5 min — fewer concurrent Firestore reads under load
 const GROQ_CONNECTIVITY_TTL_MS = 30_000;
 const GROQ_HEALTH_TTL_MS = 60_000;
-const FIREBASE_FETCH_TIMEOUT_MS = 2_000;
-const FIREBASE_FAILURE_BACKOFF_MS = 300_000;
+const FIREBASE_FETCH_TIMEOUT_MS = 6_000;  // 6 s — handles real-world latency with many users
+const FIREBASE_FAILURE_BACKOFF_MS = 90_000; // 90 s — recover faster after a transient failure
 const CONTENT_MODE_CACHE_TTL_MS = 30_000;
 const FIREBASE_CONTENT_ENABLED = process.env.ENABLE_FIREBASE_CONTENT === 'true';
 const firebaseServerReady = FIREBASE_CONTENT_ENABLED && !!serverDb && isFirebaseServerConfigured;
@@ -471,6 +472,12 @@ const buildKnowledgePrompt = (data: KnowledgeData, query: string) => {
       const content = data.intentSections[intent] ?? '';
       return content ? [`\n[INTENT: ${intent}]`, content] : [];
     }),
+    ...(data.announcements.length > 0
+      ? [
+          '\nANNOUNCEMENTS & UPDATES (current — always share with guests when relevant):',
+          ...data.announcements.map((a) => `- ${a.title}: ${a.content}`),
+        ]
+      : []),
   ].join('\n');
 };
 
@@ -484,9 +491,10 @@ const loadKnowledgeData = async (mode: ContentMode): Promise<KnowledgeData> => {
     chatResponses,
     intentSections: intentKnowledgeSections,
     settings: defaultSettings,
+    announcements: [],
   };
 
-  const [faqsDoc, toursDoc, resortsDoc, servicesDoc, knowledgeDoc, chatResponsesDoc, settingsDoc] = await Promise.all([
+  const [faqsDoc, toursDoc, resortsDoc, servicesDoc, knowledgeDoc, chatResponsesDoc, settingsDoc, announcementsDoc] = await Promise.all([
     readDocData('contentData', 'faqs', mode),
     readDocData('contentData', 'tours', mode),
     readDocData('contentData', 'resorts', mode),
@@ -494,6 +502,7 @@ const loadKnowledgeData = async (mode: ContentMode): Promise<KnowledgeData> => {
     readDocData('siteContent', 'knowledge', mode),
     readDocData('siteContent', 'chatResponses', mode),
     readDocData('siteContent', 'settings', mode),
+    readDocData('siteContent', 'announcements', mode),
   ]);
 
   const firebaseFaqs = Array.isArray(faqsDoc?.items)
@@ -575,6 +584,13 @@ const loadKnowledgeData = async (mode: ContentMode): Promise<KnowledgeData> => {
       }, { ...defaultSettings })
     : fallback.settings;
 
+  const firebaseAnnouncements = Array.isArray(announcementsDoc?.items)
+    ? (announcementsDoc.items as Array<Record<string, unknown>>).filter(
+        (item): item is { title: string; content: string } =>
+          isObject(item) && typeof item.title === 'string' && typeof item.content === 'string'
+      )
+    : [];
+
   return {
     faqs: firebaseFaqs.length ? firebaseFaqs : fallback.faqs,
     tourPackages: firebaseTourPackages.length ? firebaseTourPackages : fallback.tourPackages,
@@ -584,6 +600,7 @@ const loadKnowledgeData = async (mode: ContentMode): Promise<KnowledgeData> => {
     chatResponses: firebaseChatResponses,
     intentSections: firebaseIntentSections ?? fallback.intentSections,
     settings: firebaseSettings,
+    announcements: firebaseAnnouncements,
   };
 };
 

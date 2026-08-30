@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from 'react';
-import { CheckCircle2, CircleX, Database, FileText, Pencil, RefreshCcw, Save, Sparkles } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { CheckCircle2, CircleX, Database, FileText, Info, Pencil, RefreshCcw, Save, Sparkles, X } from 'lucide-react';
 import type { ChatStatus, ContentMode, EditableDataKey } from '@/types/admin';
 
 type CollectionsEditorSectionProps = {
@@ -50,6 +50,30 @@ export default function CollectionsEditorSection({
   switchContentMode,
 }: CollectionsEditorSectionProps) {
   const [isCollectionEditorOpen, setIsCollectionEditorOpen] = useState(false);
+  const [infoModalKey, setInfoModalKey] = useState<EditableDataKey | null>(null);
+  const [notes, setNotes] = useState<Partial<Record<EditableDataKey, string>>>({});
+  const [noteDraft, setNoteDraft] = useState('');
+
+  // load notes from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('admin_data_notes');
+      if (stored) setNotes(JSON.parse(stored) as Partial<Record<EditableDataKey, string>>);
+    } catch { /* ignore */ }
+  }, []);
+
+  function openInfoModal(key: EditableDataKey) {
+    setInfoModalKey(key);
+    setNoteDraft(notes[key] ?? '');
+  }
+
+  function saveNote() {
+    if (!infoModalKey) return;
+    const updated = { ...notes, [infoModalKey]: noteDraft };
+    setNotes(updated);
+    localStorage.setItem('admin_data_notes', JSON.stringify(updated));
+    setInfoModalKey(null);
+  }
 
   return (
     <div className="mt-4 space-y-4">
@@ -128,7 +152,20 @@ export default function CollectionsEditorSection({
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    <div className="flex justify-end">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openInfoModal(key)}
+                        aria-label={`Info for ${dataCollectionLabels[key]}`}
+                        className={`relative rounded-lg border p-1.5 transition hover:bg-cyan-500/10 ${
+                          notes[key] ? 'border-cyan-300/60 text-cyan-300' : 'border-cyan-200/35 text-cyan-100/60'
+                        }`}
+                      >
+                        <Info className="h-4 w-4" />
+                        {notes[key] ? (
+                          <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-cyan-400" />
+                        ) : null}
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
@@ -148,6 +185,51 @@ export default function CollectionsEditorSection({
             </tbody>
           </table>
         </div>
+
+        {infoModalKey ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-2xl border border-cyan-200/20 bg-[#122b63] p-4 shadow-2xl">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Info className="h-4 w-4 text-cyan-300" />
+                  <p className="text-sm font-semibold text-cyan-100">
+                    {dataCollectionLabels[infoModalKey]} — Notes
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInfoModalKey(null)}
+                  className="rounded-lg border border-cyan-200/35 p-1 text-cyan-100 hover:bg-cyan-500/10"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <textarea
+                className="min-h-[140px] w-full rounded-xl border border-cyan-300/20 bg-[#0b2d23]/60 px-3 py-2 text-sm text-white outline-none placeholder:text-cyan-200/40 focus:border-cyan-300/60"
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                placeholder="Add notes, reminders, or field descriptions for this data file…"
+              />
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setInfoModalKey(null)}
+                  className="rounded-xl border border-cyan-200/35 px-3 py-1.5 text-xs text-cyan-100 hover:bg-cyan-500/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveNote}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-400 px-3 py-1.5 text-xs font-semibold text-[#04204e] hover:bg-cyan-300"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  Save note
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {isCollectionEditorOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

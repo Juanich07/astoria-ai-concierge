@@ -8,6 +8,7 @@ import { defaultLandingContent, normalizeLandingPageContent, type LandingPageCon
 import AdminHeaderBar from '@/components/admin/AdminHeaderBar';
 import CarouselEditorSection from '@/components/admin/CarouselEditorSection';
 import CollectionsEditorSection from '@/components/admin/CollectionsEditorSection';
+import AnnouncementsSection from '@/components/admin/AnnouncementsSection';
 import NewsEditorSection from '@/components/admin/NewsEditorSection';
 import type { ActivityLogEntry, ChatStatus, ContentMode, DailyHealthSnapshot, EditableDataKey } from '@/types/admin';
 import type { LucideIcon } from 'lucide-react';
@@ -19,6 +20,7 @@ import {
   Gauge,
   LayoutGrid,
   Lock,
+  Megaphone,
   Newspaper,
   Save,
   ShieldCheck,
@@ -37,7 +39,7 @@ import { intentKnowledgeSections, extendedKnowledge } from '@/data/extendedKnowl
 import { defaultSettings, type HotelSettings } from '@/data/settings';
 import { auth, db, isFirebaseConfigured, storage } from '@/lib/firebase';
 
-type SectionId = 'overview' | 'health' | 'carousel' | 'news' | 'data' | 'collections' | 'profile';
+type SectionId = 'overview' | 'health' | 'carousel' | 'news' | 'data' | 'collections' | 'announcements' | 'profile';
 type TextFieldKey = Exclude<keyof LandingPageContent, 'imageSlides' | 'newsSlides'>;
 
 type AdminProfile = {
@@ -56,6 +58,7 @@ const sections: Array<{ id: SectionId; label: string; hint: string }> = [
   { id: 'news', label: 'Edit News', hint: 'Manage news cards' },
   { id: 'data', label: 'Add / Remove Data', hint: 'Search and edit everything' },
   { id: 'collections', label: 'Data Files', hint: 'Edit resorts, faqs, tours, and more' },
+  { id: 'announcements', label: 'Announcements', hint: 'New events, buildings, notices' },
   { id: 'profile', label: 'Admin Profile', hint: 'Picture, name, ID' },
 ];
 
@@ -66,6 +69,7 @@ const sectionIcons: Record<SectionId, LucideIcon> = {
   news: Newspaper,
   data: Database,
   collections: FileText,
+  announcements: Megaphone,
   profile: User,
 };
 
@@ -1622,6 +1626,10 @@ export default function AdminPage() {
                   fetchChatStatus={fetchChatStatus}
                   switchContentMode={switchContentMode}
                 />
+              ) : null}
+
+              {activeSection === 'announcements' ? (
+                <AnnouncementsSection />
               ) : null}
 
               {activeSection === 'profile' ? (

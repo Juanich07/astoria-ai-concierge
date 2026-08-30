@@ -48,6 +48,13 @@ export type ActivityLogEntry = {
   details: string;
 };
 
+export type Announcement = {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+};
+
 export type DailyHealthSnapshot = {
   id: string;
   dateKey: string;
