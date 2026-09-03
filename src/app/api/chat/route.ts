@@ -176,7 +176,7 @@ const getEffectiveMode = async (): Promise<ContentMode> => {
   }
 
   try {
-    const settingsSnap = await withTimeout(getDoc(doc(serverDb, 'siteContent', 'settings')), FIREBASE_FETCH_TIMEOUT_MS);
+    const settingsSnap = await withTimeout(getDoc(doc(serverDb!, 'siteContent', 'settings')), FIREBASE_FETCH_TIMEOUT_MS);
     const raw = settingsSnap.exists() && isObject(settingsSnap.data()) ? settingsSnap.data() : null;
     const fromDb = normalizeMode(raw?.contentMode);
     cachedModeFromDb = {
@@ -268,7 +268,7 @@ const readDocData = async (
 
   try {
     const snapshot = await withTimeout(
-      getDoc(doc(serverDb, collectionName, docId)),
+      getDoc(doc(serverDb!, collectionName, docId)),
       FIREBASE_FETCH_TIMEOUT_MS
     );
     if (!snapshot.exists()) return null;
