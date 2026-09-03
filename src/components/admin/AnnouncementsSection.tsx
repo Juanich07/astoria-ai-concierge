@@ -30,7 +30,7 @@ export default function AnnouncementsSection() {
         setStatusMsg('Firebase is not configured.');
         return;
       }
-      const snap = await getDoc(doc(db, 'siteContent', 'announcements'));
+      const snap = await getDoc(doc(db!, 'siteContent', 'announcements'));
       const data = snap.data();
       if (Array.isArray(data?.items)) {
         setItems(data.items as Announcement[]);
@@ -44,7 +44,7 @@ export default function AnnouncementsSection() {
 
   async function persistItems(next: Announcement[]) {
     if (!isFirebaseConfigured || !db) return;
-    await setDoc(doc(db, 'siteContent', 'announcements'), { items: next }, { merge: false });
+    await setDoc(doc(db!, 'siteContent', 'announcements'), { items: next }, { merge: false });
   }
 
   function openNew() {

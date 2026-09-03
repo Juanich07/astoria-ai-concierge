@@ -933,7 +933,7 @@ export default function AdminPage() {
       );
 
       batch.set(
-        doc(db, 'seedData', 'meta'),
+        doc(db!, 'seedData', 'meta'),
         {
           seededAt: serverTimestamp(),
           seededBy: user.uid,

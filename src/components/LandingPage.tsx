@@ -44,7 +44,7 @@ export default function LandingPage() {
 
     const loadLandingContent = async () => {
       try {
-        const snapshot = await getDoc(doc(db, 'siteContent', 'landingPage'));
+        const snapshot = await getDoc(doc(db!, 'siteContent', 'landingPage'));
         if (!snapshot.exists() || !isMounted) return;
         const nextContent = normalizeLandingPageContent(snapshot.data());
         setContent(nextContent);
