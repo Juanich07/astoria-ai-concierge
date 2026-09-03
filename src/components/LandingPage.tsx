@@ -102,12 +102,12 @@ export default function LandingPage() {
       <div className="relative z-10 flex flex-col gap-2 pb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:pb-8">
         <div className="flex items-center gap-2">
           <Image
-            src="/icons/astoria-logo.svg"
+            src="/icons/astoria-logo.png"
             alt="Astoria Palawan logo"
             width={48}
             height={48}
             priority
-            className="h-10 w-10 rounded-md border border-emerald-100/25 bg-white/80 object-cover sm:h-12 sm:w-12"
+            className="h-10 w-10 object-contain sm:h-12 sm:w-12"
           />
           <div className="text-[10px] font-medium uppercase tracking-[0.24em] text-emerald-100/80 sm:text-sm">
             {content.badgeTitle}

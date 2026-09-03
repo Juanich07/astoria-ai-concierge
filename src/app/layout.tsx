@@ -19,9 +19,9 @@ export const metadata: Metadata = {
   title: 'Astoria Palawan Assistant – Astoria Hotels & Resorts',
   description: 'Luxury hotel concierge experience with a premium AI-first interface.',
   icons: {
-    icon: '/icons/astoria-logo.svg',
-    shortcut: '/icons/astoria-logo.svg',
-    apple: '/icons/astoria-logo.svg',
+    icon: '/icons/astoria-logo.png',
+    shortcut: '/icons/astoria-logo.png',
+    apple: '/icons/astoria-logo.png',
   },
 };
 
