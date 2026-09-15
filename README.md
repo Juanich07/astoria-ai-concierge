@@ -143,3 +143,15 @@ Check Firebase config and Firestore rules.
 - Never commit `.env.local`
 - Rotate API keys if they are shared accidentally
 - Keep provider keys server-side only
+
+## Restricting Access to a Specific Network (IP Allowlist)
+
+`src/middleware.ts` blocks all requests unless the client IP matches `ALLOWED_IPS`.
+
+- Set `ALLOWED_IPS` in Vercel (Settings → Environment Variables) as a comma-separated
+  list of IPs and/or CIDR ranges, e.g. `203.0.113.5,192.168.1.0/24`
+- If `ALLOWED_IPS` is empty/unset, the middleware allows everyone (fail-open by default)
+- Find your public IP from the target network via `https://api.ipify.org`
+- Redeploy after changing `ALLOWED_IPS` for it to take effect
+- Only supports IPv4 CIDR matching; Vercel's paid Firewall (Project → Security) offers
+  IPv6, geo-blocking, and rate limiting on Pro plans and above
