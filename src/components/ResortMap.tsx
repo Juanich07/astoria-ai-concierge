@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { MapPinned, X } from 'lucide-react';
+import { MapPinned, RectangleHorizontal, RectangleVertical, X } from 'lucide-react';
 
 const mapImage = '/icons/apw-map.jpg';
 
 export default function ResortMap() {
   const [isOpen, setIsOpen] = useState(false);
   const [hasImageError, setHasImageError] = useState(false);
+  const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -57,14 +58,26 @@ export default function ResortMap() {
             if (event.target === event.currentTarget) setIsOpen(false);
           }}
         >
-          <button
-            type="button"
-            onClick={() => setIsOpen(false)}
-            className="absolute right-3 top-3 z-10 inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/25 bg-black/55 text-white transition hover:bg-black/80"
-            aria-label="Close resort map"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="absolute right-3 top-3 z-10 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setOrientation((current) => current === 'landscape' ? 'portrait' : 'landscape')}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/25 bg-black/55 px-3 text-white transition hover:bg-black/80"
+              aria-label={`Switch to ${orientation === 'landscape' ? 'portrait' : 'landscape'} orientation`}
+              title={`Switch to ${orientation === 'landscape' ? 'portrait' : 'landscape'}`}
+            >
+              {orientation === 'landscape' ? <RectangleVertical className="h-5 w-5" /> : <RectangleHorizontal className="h-5 w-5" />}
+              <span className="text-xs font-medium capitalize">{orientation}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/25 bg-black/55 text-white transition hover:bg-black/80"
+              aria-label="Close resort map"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
           {!hasImageError ? (
             <Image
               src={mapImage}
@@ -72,7 +85,7 @@ export default function ResortMap() {
               width={1466}
               height={733}
               priority
-              className="max-h-[calc(100dvh-1rem)] w-auto max-w-full object-contain sm:max-h-[calc(100dvh-2rem)]"
+              className={`object-contain transition-transform duration-300 ${orientation === 'landscape' ? 'max-h-[calc(100dvh-1rem)] w-auto max-w-full sm:max-h-[calc(100dvh-2rem)]' : 'h-auto max-h-none w-[min(90dvh,180dvw)] max-w-none rotate-90'}`}
               onError={() => setHasImageError(true)}
             />
           ) : (
