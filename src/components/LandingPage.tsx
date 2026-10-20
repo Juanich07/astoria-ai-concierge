@@ -6,6 +6,7 @@ import { MessageCircle } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { defaultLandingContent, normalizeLandingPageContent } from '@/data/landingContent';
 import { db, isFirebaseConfigured } from '@/lib/firebase';
+import ResortMap from '@/components/ResortMap';
 
 const LANDING_PAGE_STORAGE_KEY = 'astoria-landing-page-content';
 
@@ -174,6 +175,8 @@ export default function LandingPage() {
               <p className="mt-2 text-xs text-emerald-50/90">{content.chatbotSubtitle}</p>
             </div>
           </button>
+
+          <ResortMap />
         </div>
       </section>
     </main>
